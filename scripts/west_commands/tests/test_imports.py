@@ -48,5 +48,6 @@ def test_runner_imports():
                     'trace32',
                     'teensy',
                     'uf2',
+                    'xsdb',
                     'xtensa'))
     assert runner_names == expected
