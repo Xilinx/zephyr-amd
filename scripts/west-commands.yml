@@ -76,3 +76,13 @@ west-commands:
       - name: simulate
         class: Simulate
         help: simulate board
+  - file: scripts/west_commands/lopper_install.py
+    commands:
+      - name: lopper-install
+        class: LopperInstall
+        help: Install lopper as a part of environment
+  - file: scripts/west_commands/lopper_command.py
+    commands:
+      - name: lopper-command
+        class: LopperCommand
+        help: work with Lopper Commands
