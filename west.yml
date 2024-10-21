@@ -23,6 +23,8 @@ manifest:
       url-base: https://github.com/zephyrproject-rtos
     - name: babblesim
       url-base: https://github.com/BabbleSim
+    - name: devicetree-org
+      url-base: https://github.com/devicetree-org
 
   group-filter: [-babblesim, -optional]
 
@@ -306,6 +308,10 @@ manifest:
       groups:
         - fs
       revision: 8f5ca347843363882619d8f96c00d8dbd88a8e79
+    - name: lopper
+      repo-path: lopper
+      revision: b71d55f694116bfdaaf7624d37952a45568c89a6
+      remote: devicetree-org
     - name: lora-basics-modem
       revision: 9a14f6772c1d6e303bacb2d594c8063bb804b6ee
       path: modules/lib/lora-basics-modem

@@ -69,6 +69,16 @@ west-commands:
       - name: bindesc
         class: Bindesc
         help: work with Binary Descriptors
+  - file: scripts/west_commands/lopper_install.py
+    commands:
+      - name: lopper-install
+        class: LopperInstall
+        help: Install lopper as a part of environment
+  - file: scripts/west_commands/lopper_command.py
+    commands:
+      - name: lopper-command
+        class: LopperCommand
+        help: work with Lopper Commands
   - file: scripts/west_commands/robot.py
     commands:
       - name: robot
