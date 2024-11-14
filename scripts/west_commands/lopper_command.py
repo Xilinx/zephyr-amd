@@ -95,9 +95,9 @@ class LopperCommand(WestCommand):
 
         lops_file = os.path.join(lops_dir, "lop-microblaze-riscv.dts")
         lops_file_intc = os.path.join(lops_dir, "lop-mbv-zephyr-intc.dts")
-        runcmd(f"lopper -f --enhanced -O {workspace} -i {lops_file} {sdt} {workspace}/system-domain.dts -- gen_domain_dts microblaze_riscv_0",
+        runcmd(f"lopper -f --enhanced -O {workspace} -i {lops_file} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
                 cwd = workspace)
-        runcmd(f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-zephyr.dts -- gen_domain_dts microblaze_riscv_0 zephyr_dt",
+        runcmd(f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-zephyr.dts -- gen_domain_dts {proc} zephyr_dt",
                 cwd = workspace)
         runcmd(f"lopper -f --enhanced -O {workspace} -i {lops_file_intc}  {workspace}/system-zephyr.dts  {workspace}/mbv32.dts",
                  cwd = workspace)
