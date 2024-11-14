@@ -6,6 +6,7 @@ import subprocess
 import sys
 import lopper
 import os
+import shutil
 from west.commands import WestCommand
 
 def get_dir_path(fpath):
@@ -70,8 +71,8 @@ class LopperCommand(WestCommand):
             "-w",
             "--ws_dir",
             action="store",
-            help="Workspace directory where domain will be created (Default: Current Work Directory)",
-            default='.',
+            help="Workspace directory (zephyr repository path) where domain will be created (Default: zephyr directory in Current Work Directory)",
+            default='./zephyr/',
         )
 
         return parser
@@ -80,12 +81,29 @@ class LopperCommand(WestCommand):
         sdt = os.path.abspath(args.sdt)
         proc = args.proc
         workspace = os.path.abspath(args.ws_dir)
+        workspace = os.path.join(os.path.abspath(args.ws_dir), "lopper_metadata")
+        if not os.path.exists(workspace):
+            os.makedirs(workspace)
+        generated_dts_file = os.path.join(workspace, "mbv32.dts")
+        workspace_dts_file = os.path.join(os.path.abspath(args.ws_dir), "boards", "amd", "mbv32", "mbv32.dts")
+        workspace_kconfig_defconfig = os.path.join(os.path.abspath(args.ws_dir), "soc", "xlnx", "mbv32", "Kconfig.defconfig")
+        generated_kconfig_defconfig = os.path.join(workspace, "Kconfig.defconfig")
+        workspace_kconfig_soc = os.path.join(os.path.abspath(args.ws_dir), "soc", "xlnx", "mbv32", "Kconfig")
+        generated_kconfig_soc = os.path.join(workspace, "Kconfig")
         lops_dir = os.path.join(get_dir_path(lopper.__file__), "lops")
 
 
         lops_file = os.path.join(lops_dir, "lop-microblaze-riscv.dts")
+        lops_file_intc = os.path.join(lops_dir, "lop-mbv-zephyr-intc.dts")
         runcmd(f"lopper -f --enhanced -O {workspace} -i {lops_file} {sdt} {workspace}/system-domain.dts -- gen_domain_dts microblaze_riscv_0",
                 cwd = workspace)
         runcmd(f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-zephyr.dts -- gen_domain_dts microblaze_riscv_0 zephyr_dt",
                 cwd = workspace)
+        runcmd(f"lopper -f --enhanced -O {workspace} -i {lops_file_intc}  {workspace}/system-zephyr.dts  {workspace}/mbv32.dts",
+                 cwd = workspace)
+
+        shutil.copy(generated_dts_file, workspace_dts_file)
+        shutil.copy(generated_kconfig_defconfig, workspace_kconfig_defconfig)
+        shutil.copy(generated_kconfig_soc, workspace_kconfig_soc)
+        shutil.rmtree(workspace)
 
