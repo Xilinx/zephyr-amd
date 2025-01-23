@@ -8,4 +8,4 @@ config SOC_MBV32
 	bool
 
 config SOC
-	default "mbv32"
+	default "mbv32" if SOC_MBV32
