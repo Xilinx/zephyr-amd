@@ -98,5 +98,25 @@
 			clocks = <&clk100>;
 			current-speed = <115200>;
 		};
+
+		axi_gpio: gpio@40010000 {
+			compatible = "xlnx,xps-gpio-1.00.a";
+			reg = <0x40010000 0x10000>;
+			gpio-controller;
+			interrupt-parent = <&axi_intc>;
+			interrupts = <0x4 0x2>;
+			#gpio-cells = <0x2>;
+			xlnx,all-inputs = <0x0>;
+			xlnx,tri-default = <0xffffffff>;
+			xlnx,gpio2-width = <0x20>;
+			xlnx,dout-default-2 = <0x0>;
+			xlnx,all-outputs-2 = <0x0>;
+			xlnx,all-inputs-2 = <0x0>;
+			xlnx,tri-default-2 = <0xffffffff>;
+			xlnx,is-dual = <0x0>;
+			xlnx,dout-default = <0x0>;
+			xlnx,gpio-width = <0x2>;
+			xlnx,all-outputs = <0x0>;
+		};
 	};
 };
