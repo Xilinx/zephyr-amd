@@ -26,3 +26,9 @@ tests:
     platform_allow:
       - kv260_r5
     extra_args: "DTC_OVERLAY_FILE=boards/kv260_r5.overlay"
+
+  drivers.gpio.mbv32:
+    filter: CONFIG_GPIO_XLNX_AXI
+    platform_allow:
+      - mbv32
+    extra_args: "DTC_OVERLAY_FILE=boards/mbv32.overlay"
