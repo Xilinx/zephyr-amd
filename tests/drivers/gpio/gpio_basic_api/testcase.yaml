@@ -20,3 +20,9 @@ tests:
   drivers.gpio.mr_canhubk3_wkpu:
     platform_allow: mr_canhubk3
     extra_args: "DTC_OVERLAY_FILE=boards/mr_canhubk3_wkpu.overlay"
+
+  drivers.gpio.kv260_r5:
+    filter: CONFIG_GPIO_XLNX_PS
+    platform_allow:
+      - kv260_r5
+    extra_args: "DTC_OVERLAY_FILE=boards/kv260_r5.overlay"
