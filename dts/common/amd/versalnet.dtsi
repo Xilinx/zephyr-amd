@@ -7,6 +7,24 @@
 
 / {
 	soc: soc {
+		i2c0: i2c@f1940000 {
+			compatible = "cdns,i2c-r1p14";
+			reg = <0xf1940000 0x1000>;
+			status = "disabled";
+			interrupts = <GIC_SPI 21 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+
+		i2c1: i2c@f1950000 {
+			compatible = "cdns,i2c-r1p14";
+			reg = <0xf1950000 0x1000>;
+			status = "disabled";
+			interrupts = <GIC_SPI 22 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+
 		ocm: memory@bbf00000 {
 			compatible = "zephyr,memory-region";
 			reg = <0xbbf00000 DT_SIZE_M(1)>;
