@@ -29,6 +29,26 @@
 			interrupts = <GIC_SPI 26 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
 		};
 
+		i2c0: i2c@f1940000 {
+			compatible = "cdns,i2c";
+			reg = <0xf1940000 0x1000>;
+			status = "disabled";
+			interrupts = <GIC_SPI 21 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			fifo-depth = <16>;
+		};
+
+		i2c1: i2c@f1950000 {
+			compatible = "cdns,i2c";
+			reg = <0xf1950000 0x1000>;
+			status = "disabled";
+			interrupts = <GIC_SPI 22 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			fifo-depth = <16>;
+		};
+
 		sdhci0: mmc@f1040000 {
 			compatible = "xlnx,versal-8.9a";
 			status = "disabled";
