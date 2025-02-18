@@ -1,5 +1,10 @@
-board:
-  name: versalnet_rpu
-  vendor: amd
-  socs:
+boards:
   - name: versalnet_rpu
+    vendor: amd
+    socs:
+      - name: versalnet_rpu
+
+  - name: tenzing2_se9_rpu
+    vendor: amd
+    socs:
+      - name: versalnet_rpu

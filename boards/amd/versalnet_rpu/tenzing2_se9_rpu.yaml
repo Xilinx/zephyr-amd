@@ -1,0 +1,13 @@
+identifier: tenzing2_se9_rpu
+name: AMD Development board for VersalNet RPU - Tenzing2 se9
+arch: arm
+toolchain:
+  - zephyr
+supported:
+  - i2c
+  - eeprom
+testing:
+  ignore_tags:
+    - net
+    - bluetooth
+vendor: amd
