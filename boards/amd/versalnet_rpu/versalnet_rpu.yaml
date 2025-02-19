@@ -1,6 +1,8 @@
 identifier: versalnet_rpu
 name: AMD Development board for Versal NET RPU
 arch: arm
+simulation:
+  - name: qemu
 toolchain:
   - zephyr
 testing:
