@@ -42,7 +42,6 @@ LOG_MODULE_REGISTER(xilinx_wwdt, CONFIG_WDT_LOG_LEVEL);
 
 struct xilinx_wwdt_config {
 	uint32_t wdt_clock_freq;
-	uint32_t timeout_sec;
 	mem_addr_t base;
 };
 
@@ -57,7 +56,7 @@ static int wdt_xilinx_wwdt_setup(const struct device *dev, uint8_t options)
 	const struct xilinx_wwdt_config *config = dev->config;
 	struct xilinx_wwdt_data *data = dev->data;
 	uint32_t reg_value;
-	uint32_t ret = 0;
+	int ret = 0;
 
 	k_spinlock_key_t key = k_spin_lock(&data->lock);
 
@@ -98,7 +97,7 @@ static int wdt_xilinx_wwdt_install_timeout(const struct device *dev,
 	uint64_t timeout_ms_count;
 	uint32_t timeout_ms;
 	uint64_t ms_count;
-	uint32_t ret = 0;
+	int ret = 0;
 
 	k_spinlock_key_t key = k_spin_lock(&data->lock);
 
@@ -112,16 +111,8 @@ static int wdt_xilinx_wwdt_install_timeout(const struct device *dev,
 		goto out;
 	}
 
-	timeout_ms = config->timeout_sec * 1000;
+	timeout_ms = cfg->window.max;
 	max_hw_timeout_ms = (XWWDT_MAX_COUNT_WINDOW_COMBINED * 1000) / config->wdt_clock_freq;
-
-	/*
-	 * If the maximum limit of the window is passed from the user space,
-	 * overwrite the timeout with this value.
-	 */
-	if (cfg->window.max > 0) {
-		timeout_ms = cfg->window.max;
-	}
 
 	/* Timeout greater than the maximum hardware timeout is invalid. */
 	if (timeout_ms > max_hw_timeout_ms) {
@@ -164,7 +155,7 @@ static int wdt_xilinx_wwdt_feed(const struct device *dev, int channel_id)
 	struct xilinx_wwdt_data *data = dev->data;
 	uint32_t control_status_reg;
 	uint32_t is_sec_window;
-	uint32_t ret = 0;
+	int ret = 0;
 
 	k_spinlock_key_t key = k_spin_lock(&data->lock);
 
@@ -202,7 +193,7 @@ static int wdt_xilinx_wwdt_disable(const struct device *dev)
 	uint32_t is_wwdt_enable;
 	uint32_t is_sec_window;
 	uint32_t reg_value;
-	uint32_t ret = 0;
+	int ret = 0;
 
 	k_spinlock_key_t key = k_spin_lock(&data->lock);
 
@@ -226,9 +217,6 @@ static int wdt_xilinx_wwdt_disable(const struct device *dev)
 	/* Read enable status register and update WEN bit. */
 	reg_value = sys_read32(config->base + XWWDT_ESR_OFFSET) & (~XWWDT_ESR_WEN_MASK);
 
-	/* Set WSW bit to zero. It is RW1C bit. */
-	reg_value &= ~((uint32_t)XWWDT_ESR_WSW_MASK);
-
 	/* Write enable status register with updated WEN and WSW value. */
 	sys_write32(reg_value, config->base + XWWDT_ESR_OFFSET);
 
@@ -241,10 +229,11 @@ out:
 static int wdt_xilinx_wwdt_init(const struct device *dev)
 {
 	const struct xilinx_wwdt_config *config = dev->config;
-	uint32_t ret = 0;
+	int ret = 0;
 
-	if (config->timeout_sec == 0)
+	if (config->wdt_clock_freq == 0) {
 		return -EINVAL;
+	}
 
 	return ret;
 }
@@ -261,7 +250,6 @@ static const struct wdt_driver_api wdt_xilinx_wwdt_api = {
 												\
 	static const struct xilinx_wwdt_config wdt_xilinx_wwdt_##inst##_cfg = {			\
 		.base = DT_INST_REG_ADDR(inst),							\
-		.timeout_sec = DT_INST_PROP(inst, timeout_sec),					\
 		.wdt_clock_freq = DT_INST_PROP_BY_PHANDLE(inst, clocks, clock_frequency),	\
 	};											\
 												\
