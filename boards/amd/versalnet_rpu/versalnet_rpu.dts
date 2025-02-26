@@ -15,6 +15,12 @@
 		zephyr,shell-uart = &uart0;
 		zephyr,ocm = &ocm;
 	};
+
+	wwdtclk: wwdtclk {
+		compatible = "fixed-clock";
+		clock-frequency = <150000000>;
+		#clock-cells = <0>;
+	};
 };
 
 &soc {
@@ -38,4 +44,34 @@
 	status = "okay";
 	current-speed = <115200>;
 	clock-frequency = <100000000>;
+};
+
+&wwdt0 {
+	status = "okay";
+	clocks = <&wwdtclk>;
+};
+
+&wwdt1 {
+	status = "okay";
+	clocks = <&wwdtclk>;
+};
+
+&wwdt2 {
+	status = "okay";
+	clocks = <&wwdtclk>;
+};
+
+&wwdt3 {
+	status = "okay";
+	clocks = <&wwdtclk>;
+};
+
+&lpd_wwdt0 {
+	status = "okay";
+	clocks = <&wwdtclk>;
+};
+
+&pmc_wwdt {
+	status = "okay";
+	clocks = <&wwdtclk>;
 };
