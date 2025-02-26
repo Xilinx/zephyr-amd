@@ -15,9 +15,19 @@
 		zephyr,ocm = &ocm;
 	};
 
+	aliases {
+		watchdog0 = &wwdt0;
+	};
+
 	sdhci_ref_clk: sdhci-ref-clk {
 		compatible = "fixed-clock";
 		clock-frequency = <200000000>;
+		#clock-cells = <0>;
+	};
+
+	wwdtclk: wwdt-clk {
+		compatible = "fixed-clock";
+		clock-frequency = <150000000>;
 		#clock-cells = <0>;
 	};
 };
@@ -63,4 +73,34 @@
 &sdhci1 {
 	status = "okay";
 	clocks = <&sdhci_ref_clk>;
+};
+
+&wwdt0 {
+	status = "okay";
+	clocks = <&wwdtclk>;
+};
+
+&wwdt1 {
+	status = "okay";
+	clocks = <&wwdtclk>;
+};
+
+&wwdt2 {
+	status = "okay";
+	clocks = <&wwdtclk>;
+};
+
+&wwdt3 {
+	status = "okay";
+	clocks = <&wwdtclk>;
+};
+
+&lpd_wwdt0 {
+	status = "okay";
+	clocks = <&wwdtclk>;
+};
+
+&pmc_wwdt {
+	status = "okay";
+	clocks = <&wwdtclk>;
 };
