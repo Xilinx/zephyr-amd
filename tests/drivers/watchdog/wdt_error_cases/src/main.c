@@ -19,6 +19,8 @@
 #define WDT_NODE DT_INST(0, nordic_nrf_wdt)
 #elif DT_HAS_COMPAT_STATUS_OKAY(zephyr_counter_watchdog)
 #define WDT_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(zephyr_counter_watchdog)
+#elif DT_HAS_COMPAT_STATUS_OKAY(xlnx_versal_wwdt)
+#define WDT_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(xlnx_versal_wwdt)
 #endif
 
 #if DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_dtcm), okay)
@@ -51,6 +53,13 @@
 #define MAX_INSTALLABLE_TIMEOUTS (8)
 #define WDT_WINDOW_MAX_ALLOWED   (0x07CFFFFFU)
 #define DEFAULT_OPTIONS          (WDT_OPT_PAUSE_IN_SLEEP | WDT_OPT_PAUSE_HALTED_BY_DBG)
+#elif defined(CONFIG_XILINX_WINDOW_WATCHDOG)
+#define WDT_TEST_FLAGS                                                                             \
+	(WDT_DISABLE_SUPPORTED | WDT_FLAG_RESET_SOC_SUPPORTED)
+#define DEFAULT_FLAGS            (WDT_FLAG_RESET_SOC)
+#define MAX_INSTALLABLE_TIMEOUTS (8)
+#define WDT_WINDOW_MAX_ALLOWED	 (0x0FFFFFFFU)
+#define DEFAULT_OPTIONS          (WDT_OPT_PAUSE_IN_SLEEP)
 #else
 /* By default run most of the error checks.
  * See Readme.txt on how to align test scope for the specific target.
@@ -67,6 +76,7 @@
 static const struct device *const wdt = DEVICE_DT_GET(WDT_NODE);
 static struct wdt_timeout_cfg m_cfg_wdt0;
 
+#if !defined(CONFIG_XILINX_WINDOW_WATCHDOG)
 /* Following variables are incremented in WDT callbacks
  * to indicate whether interrupt was fired or not.
  */
@@ -106,6 +116,7 @@ static void wdt_test_08d_B_cb(const struct device *wdt_dev, int channel_id)
 	ARG_UNUSED(channel_id);
 	m_test_08d_B_value = TEST_08D_B_TAG;
 }
+#endif
 
 /**
  * @brief wdt_disable() negative test
@@ -266,6 +277,7 @@ ZTEST(wdt_coverage, test_04w_wdt_install_timeout_with_invalid_window)
 {
 	int ret;
 
+#if !defined(CONFIG_XILINX_WINDOW_WATCHDOG)
 	/* set defaults */
 	m_cfg_wdt0.callback = NULL;
 	m_cfg_wdt0.flags = DEFAULT_FLAGS;
@@ -294,7 +306,28 @@ ZTEST(wdt_coverage, test_04w_wdt_install_timeout_with_invalid_window)
 		     "Calling wdt_install_timeout with window.max = 0 should return -EINVAL (-22), "
 		     "got unexpected value of %d",
 		     ret);
+#else
+	m_cfg_wdt0.callback = NULL;
+	m_cfg_wdt0.flags = DEFAULT_FLAGS;
+	m_cfg_wdt0.window.max = 50000;
+	m_cfg_wdt0.window.min = 45000;
 
+	/* Closed window should not exceed max supported */
+	ret = wdt_install_timeout(wdt, &m_cfg_wdt0);
+	zassert_true(ret == -EINVAL,
+		     "Calling wdt_install_timeout with window.min = 45000 should return -EINVAL (-22), "
+		     "got unexpected value of %d",
+		     ret);
+
+	/* Open window should not exceed max supported */
+	m_cfg_wdt0.window.max = 50000;
+	m_cfg_wdt0.window.min = 5000;
+	ret = wdt_install_timeout(wdt, &m_cfg_wdt0);
+	zassert_true(ret == -EINVAL,
+		     "Calling wdt_install_timeout with window.min = 5000 should return -EINVAL (-22), "
+		     "got unexpected value of %d",
+		     ret);
+#endif
 	/* Check that window.max can't exceed maximum allowed value */
 	m_cfg_wdt0.window.max = WDT_WINDOW_MAX_ALLOWED + 1;
 	ret = wdt_install_timeout(wdt, &m_cfg_wdt0);
@@ -373,6 +406,7 @@ ZTEST(wdt_coverage, test_05_wdt_install_timeout_after_wdt_setup)
 	/* Assumption: wdt_disable() is called after this test */
 }
 
+#if !defined(CONFIG_XILINX_WINDOW_WATCHDOG)
 /**
  * @brief wdt_setup() negative test
  *
@@ -499,6 +533,7 @@ ZTEST(wdt_coverage, test_06c_wdt_setup_WDT_OPT_PAUSE_HALTED_BY_DBG_not_supported
 		     "got unexpected value of %d",
 		     ret);
 }
+#endif
 
 /**
  * @brief wdt_setup() corner case
@@ -594,6 +629,7 @@ ZTEST(wdt_coverage, test_08a_wdt_disable_not_supported)
 		     ret);
 }
 
+#if !defined(CONFIG_XILINX_WINDOW_WATCHDOG)
 /**
  * @brief Test that wdt_disable() stops watchdog
  *
@@ -653,6 +689,7 @@ ZTEST(wdt_coverage, test_08b_wdt_disable_check_not_firing)
 	/* m_test_08b_value is set to TEST_08B_TAG in WDT callback */
 	zassert_equal(m_test_08b_value, 0, "Watchod has fired while it shouldn't");
 }
+#endif
 
 /**
  * @brief Test that after wdt_disable() timeouts can be reconfigured
@@ -661,6 +698,7 @@ ZTEST(wdt_coverage, test_08b_wdt_disable_check_not_firing)
  * timeout channel that was configured previously.
  *
  */
+
 ZTEST(wdt_coverage, test_08c_wdt_disable_check_timeouts_reusable)
 {
 	int ret, id1, id2;
@@ -696,6 +734,7 @@ ZTEST(wdt_coverage, test_08c_wdt_disable_check_timeouts_reusable)
 		     id2, id1);
 }
 
+#if !defined(CONFIG_XILINX_WINDOW_WATCHDOG)
 /**
  * @brief Test that after wdt_disable() uninstalled timeouts don't have to be feed
  *
@@ -817,6 +856,44 @@ ZTEST(wdt_coverage, test_08e_wdt_setup_immediately_after_wdt_disable)
 		     "value of %d",
 		     ret);
 }
+#else
+
+/**
+ * @brief Test error code when wdt_disable() is called in closed window
+ *
+ * Confirm that wdt_disable() returns error value or ASSERTION FAIL
+ * when it's called in closed window.
+ *
+ */
+ZTEST(wdt_coverage, test_08f_wdt_disable_in_second_window)
+{
+	int ret;
+
+	if (!(WDT_TEST_FLAGS & WDT_DISABLE_SUPPORTED)) {
+		/* Skip this test because wdt_disable() is NOT supported. */
+		ztest_test_skip();
+	}
+
+	m_cfg_wdt0.callback = NULL;
+	m_cfg_wdt0.flags = DEFAULT_FLAGS;
+	m_cfg_wdt0.window.max = 30000;
+	m_cfg_wdt0.window.min = 5000;
+
+	ret = wdt_install_timeout(wdt, &m_cfg_wdt0);
+	zassert_true(ret >= 0, "Watchdog install error, got unexpected value of %d", ret);
+	TC_PRINT("Configured WDT channel %d\n", ret);
+
+	ret = wdt_setup(wdt, DEFAULT_OPTIONS);
+	zassert_true(ret == 0, "Watchdog setup error, got unexpected value of %d", ret);
+
+	ret = wdt_disable(wdt);
+	zassert_true(ret == -EPERM,
+		     "Calling wdt_disable in second window should fail, got unexpected "
+		     "value of %d",
+		     ret);
+	k_msleep(5000);
+}
+#endif
 
 /**
  * @brief wdt_feed() negative test
@@ -912,7 +989,7 @@ ZTEST(wdt_coverage, test_09c_wdt_feed_stall)
 {
 	int ret, ch_id, i;
 
-	if (!(WDT_TEST_FLAGS & WDT_FEED_CAN_STALL)) {
+	if (!(WDT_TEST_FLAGS & WDT_FEED_CAN_STALL) || CONFIG_XILINX_WINDOW_WATCHDOG) {
 		/* Skip this test because wdt_feed() can NOT stall. */
 		ztest_test_skip();
 	}
@@ -935,10 +1012,10 @@ ZTEST(wdt_coverage, test_09c_wdt_feed_stall)
 		if (i == 0) {
 			zassert_true(ret == 0, "wdt_feed error, got unexpected value of %d", ret);
 		} else {
-			zassert_true(
-				ret == -EAGAIN,
-				"wdt_feed shall return -EAGAIN (-11), got unexpected value of %d",
-				ret);
+			zassert_true(ret == -EAGAIN,
+				     "wdt_feed shall return -EAGAIN (-11), got unexpected "
+				     "value of %d",
+				     ret);
 		}
 	}
 }
@@ -958,6 +1035,13 @@ ZTEST(wdt_coverage, test_10_wdt_install_timeout_max_number_of_timeouts)
 	m_cfg_wdt0.flags = DEFAULT_FLAGS;
 	m_cfg_wdt0.window.max = DEFAULT_WINDOW_MAX;
 	m_cfg_wdt0.window.min = DEFAULT_WINDOW_MIN;
+
+	if (CONFIG_XILINX_WINDOW_WATCHDOG) {
+		/*
+		 * Skip this test because Xilinx Window Watchdog supports multiple install timeouts.
+		 */
+		ztest_test_skip();
+	}
 
 	for (i = 0; i < MAX_INSTALLABLE_TIMEOUTS; i++) {
 		ret = wdt_install_timeout(wdt, &m_cfg_wdt0);
