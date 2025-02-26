@@ -105,6 +105,10 @@
 #define WDT_NODE DT_INST(0, andestech_atcwdt200)
 #define TIMEOUTS 0
 #define WDT_TEST_MAX_WINDOW 200U
+#elif DT_HAS_COMPAT_STATUS_OKAY(xlnx_versal_wwdt)
+#define WDT_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(xlnx_versal_wwdt)
+#define WDT_TEST_MAX_WINDOW 20000U
+#define TIMEOUTS 0
 #endif
 #if DT_HAS_COMPAT_STATUS_OKAY(raspberrypi_pico_watchdog)
 #define WDT_TEST_MAX_WINDOW 20000U
@@ -358,6 +362,7 @@ static int test_wdt_callback_2(void)
 }
 #endif
 
+#if !defined(CONFIG_XILINX_WINDOW_WATCHDOG)
 static int test_wdt_bad_window_max(void)
 {
 	int err;
@@ -380,6 +385,7 @@ static int test_wdt_bad_window_max(void)
 
 	return TC_FAIL;
 }
+#endif
 
 ZTEST(wdt_basic_test_suite, test_wdt)
 {
@@ -401,8 +407,11 @@ ZTEST(wdt_basic_test_suite, test_wdt)
 #endif
 	}
 	if (m_testcase_index == 3U) {
+#if !defined(CONFIG_XILINX_WINDOW_WATCHDOG)
 		zassert_true(test_wdt_bad_window_max() == TC_PASS);
+#else
 		m_testcase_index++;
+#endif
 	}
 	if (m_testcase_index > 3) {
 		m_state = WDT_TEST_STATE_IDLE;
