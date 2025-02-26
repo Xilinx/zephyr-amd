@@ -126,3 +126,7 @@ tests:
     filter: dt_compat_enabled("ti,tps382x")
     platform_allow: mimxrt1050_evk
     extra_args: DTC_OVERLAY_FILE="boards/mimxrt1050_evk_ti_tps382x.overlay"
+  drivers.watchdog.versalnet_rpu:
+    filter: dt_compat_enabled("xlnx,versal-wwdt")
+    platform_allow:
+      - versalnet_rpu
