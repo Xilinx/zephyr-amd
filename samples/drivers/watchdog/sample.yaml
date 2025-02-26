@@ -142,3 +142,8 @@ tests:
       - s32z2xxdc2@D/s32z270/rtu1
     integration_platforms:
       - s32z2xxdc2/s32z270/rtu0
+  sample.drivers.watchdog.versalnet_rpu:
+    filter: dt_compat_enabled("xlnx,versal-wwdt")
+    extra_args: DTC_OVERLAY_FILE=boards/versalnet_rpu.overlay
+    platform_allow:
+      - versalnet_rpu

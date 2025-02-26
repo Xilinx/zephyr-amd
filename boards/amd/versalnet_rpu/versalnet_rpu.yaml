@@ -13,3 +13,4 @@ vendor: amd
 supported:
   - sdhc
   - mbox
+  - watchdog
