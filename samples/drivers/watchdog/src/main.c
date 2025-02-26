@@ -48,6 +48,13 @@
 #elif DT_HAS_COMPAT_STATUS_OKAY(sifli_sf32lb_wdt)
 #define WDT_ALLOW_CALLBACK 0
 #define WDT_OPT            0
+#elif DT_HAS_COMPAT_STATUS_OKAY(xlnx_versal_wwdt)
+/* Set min and max for xilinx wwdt */
+#define WDT_MIN_WINDOW  8000U
+/* Setting MAX WINDOW from user space will over-write the dts timeout */
+#define WDT_MAX_WINDOW  32000U
+#define WDG_FEED_INTERVAL 10000U
+#define WDT_ALLOW_CALLBACK 0
 #endif
 
 #ifndef WDT_ALLOW_CALLBACK
