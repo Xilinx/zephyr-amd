@@ -1,0 +1,68 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * dts file for AMD MicroBlaze V, Kintex-UltraScale KCU105
+ *
+ * (C) Copyright 2025, Advanced Micro Devices, Inc.
+ *
+ * Michal Simek <michal.simek@amd.com>
+ */
+
+#include "mbv32.dts"
+
+/ {
+	aliases {
+		eeprom-0 = &eeprom0;
+		i2c-channel-0 = &ch1;
+		i2c-channel-1 = &ch3;
+	};
+
+	chosen {
+		zephyr,sram = &lmb0;
+	};
+};
+
+&cpu_0 {
+	riscv,isa = "rv32imafdc";
+};
+
+&axi {
+	axi_iic_0: i2c@40800000 {
+		compatible = "xlnx,xps-iic-2.1";
+		reg = <0x40800000 0x10000>;
+		interrupt-parent = <&axi_intc>;
+		interrupts = <2 2>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		status = "okay";
+
+		i2c_mux0: i2c-mux@75 {
+			compatible = "nxp,pca9544", "ti,tca9544a";
+			reg = <0x75>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			ch1: i2c@1 {
+				compatible = "ti,tca9544a-channel";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <1>;
+			};
+
+			ch3: i2c@3 {
+				compatible = "ti,tca9544a-channel";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <3>;
+
+				eeprom0: eeprom@54 {
+					compatible = "atmel,24c08", "atmel,at24";
+					reg = <0x54>;
+					size = <1024>;
+					pagesize = <16>;
+					address-width = <8>;
+					timeout = <5>;
+				};
+			};
+		};
+	};
+};

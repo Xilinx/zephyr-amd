@@ -1,5 +1,10 @@
-board:
-  name: mbv32
-  vendor: amd
-  socs:
+boards:
   - name: mbv32
+    vendor: amd
+    socs:
+    - name: mbv32
+
+  - name: kcu105_mbv32
+    vendor: amd
+    socs:
+    - name: mbv32
