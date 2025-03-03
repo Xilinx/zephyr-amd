@@ -65,4 +65,13 @@
 			};
 		};
 	};
+
+	axi_timebase_wdt_0: watchdog@41a00000 {
+		compatible = "xlnx,axi-timebase-wdt-3.0" , "xlnx,xps-timebase-wdt-1.00.a";
+		reg = <0x41a00000 0x10000>;
+		clocks = <&clk100>;
+		xlnx,wdt-enable-once = <0x1>;
+		status = "okay";
+		xlnx,wdt-interval = <0x1e>;
+	};
 };
