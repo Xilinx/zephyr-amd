@@ -55,6 +55,8 @@
 #define WDT_MAX_WINDOW  32000U
 #define WDG_FEED_INTERVAL 10000U
 #define WDT_ALLOW_CALLBACK 0
+#elif DT_HAS_COMPAT_STATUS_OKAY(xlnx_xps_timebase_wdt_1_00_a)
+#define WDT_ALLOW_CALLBACK 0
 #endif
 
 #ifndef WDT_ALLOW_CALLBACK
