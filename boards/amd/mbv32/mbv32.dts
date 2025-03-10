@@ -24,8 +24,6 @@
 			device_type = "cpu";
 			reg = <0>;
 			riscv,isa = "rv32imac_zicsr_zifencei";
-			i-cache-size = <32768>;
-			d-cache-size = <32768>;
 			clock-frequency = <100000000>;
 			cpu0_intc: interrupt-controller {
 				compatible = "riscv,cpu-intc";
