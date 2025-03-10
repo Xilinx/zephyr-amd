@@ -346,7 +346,7 @@ manifest:
       path: modules/lib/zcbor
     - name: lopper
       repo-path: lopper
-      revision: a2c260c4dea33e7663a335bd9c1b20d6b2b35b90
+      revision: bf353f0db6012954996a37d729809c4ff2259696
       remote: devicetree-org
 
   self:
