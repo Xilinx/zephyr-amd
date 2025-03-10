@@ -74,4 +74,28 @@
 		status = "okay";
 		xlnx,wdt-interval = <0x1e>;
 	};
+
+	axi_spi0: spi@44a00000 {
+		status = "okay";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		fifo-size = <256>;
+		reg = <0x44a00000 0x10000>;
+		compatible = "xlnx,xps-spi-2.00.a";
+		interrupt-parent = <&axi_intc>;
+		xlnx,startup-block;
+		interrupts = <3 0>;
+		xlnx,num-ss-bits = <2>;
+		xlnx,num-transfer-bits = <8>;
+		flash@0 {
+			compatible = "jedec,spi-nor";
+			reg = <0>;
+			spi-max-frequency = <8000000>;
+			jedec-id = [20 bb 19]; /* n25q256 */
+			size = <0x8000000>;
+			has-dpd;
+			t-enter-dpd = <10000>;
+			t-exit-dpd = <35000>;
+		};
+	};
 };
