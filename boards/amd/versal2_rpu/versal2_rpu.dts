@@ -25,6 +25,12 @@
 		clock-frequency = <300000000>;
 		#clock-cells = <0>;
 	};
+
+	sdhci_ref_clk: sdhci-ref-clk {
+		compatible = "fixed-clock";
+		clock-frequency = <50000000>;
+		#clock-cells = <0>;
+	};
 };
 
 &soc {
@@ -60,4 +66,15 @@
 		disk-name = "UFS";
 		status = "okay";
 	};
+};
+
+&sdhci0 {
+	status = "okay";
+	power-delay-ms = <10>;
+	clocks = <&sdhci_ref_clk>;
+};
+
+&sdhci1 {
+	status = "okay";
+	clocks = <&sdhci_ref_clk>;
 };
