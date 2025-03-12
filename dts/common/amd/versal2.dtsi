@@ -39,5 +39,26 @@
 			      <0xf1260000 0x100>;
 			interrupts = <GIC_SPI 234 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
 		};
+
+		sdhci0: mmc@f1040000 {
+			compatible = "xlnx,versal-8.9a";
+			status = "disabled";
+			interrupts = <GIC_SPI 218 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+			reg = <0xf1040000 0x10000>;
+			sdmmc {
+				compatible = "zephyr,sdmmc-disk";
+			};
+		};
+
+		sdhci1: mmc@f1050000 {
+			compatible = "xlnx,versal-8.9a";
+			status = "disabled";
+			reg = <0xf1050000 0x10000>;
+			interrupts = <GIC_SPI 220 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+			mmc {
+				bus-width = <8>;
+				compatible = "zephyr,mmc-disk";
+			};
+		};
 	};
 };
