@@ -11,7 +11,7 @@ if SOC_AMD_VERSAL2_RPU
 config NUM_IRQS
 	# must be >= the highest interrupt number used
 	# - include the UART interrupts
-	default 256
+	default 288
 
 endif # SOC_AMD_VERSAL2_RPU
 
