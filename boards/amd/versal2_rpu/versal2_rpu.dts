@@ -18,9 +18,9 @@
 };
 
 &soc {
-	sram0: memory@0 {
+	sram0: memory@30000 {
 		compatible = "mmio-sram";
-		reg = <0x00000 DT_SIZE_M(2048)>;
+		reg = <0x30000 0x7ffd0000>;
 	};
 };
 
