@@ -1,0 +1,10 @@
+common:
+  depends_on: ufs
+  tags:
+    - subsys
+    - ufs
+tests:
+  ufs.ufs_api:
+    harness: ztest
+    filter: dt_alias_exists("ufs0")
+    tags: ufs
