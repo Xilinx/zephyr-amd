@@ -44,3 +44,5 @@ tests:
     platform_allow:
       - native_posix/native/64
       - native_posix
+  drivers.disk.ufs:
+    filter: dt_compat_enabled("zephyr,ufs-disk")
