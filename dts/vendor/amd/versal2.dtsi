@@ -52,6 +52,16 @@
 			};
 		};
 
+		ufs0: ufs@f10b0000 {
+			compatible = "amd,versal2-ufs";
+			status = "disabled";
+			reg = <0xf10b0000 0x10000>,
+			      <0xf1060000 0x2000>,
+			      <0xf1250000 0x100>,
+			      <0xf1260000 0x100>;
+			interrupts = <GIC_SPI 234 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+		};
+
 		ipi0: mailbox@eb330000 {
 			compatible = "xlnx,mbox-versal-ipi-mailbox";
 			status = "disabled";
