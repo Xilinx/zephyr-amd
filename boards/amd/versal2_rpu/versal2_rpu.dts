@@ -15,6 +15,16 @@
 		zephyr,shell-uart = &uart1;
 		zephyr,ocm = &ocm;
 	};
+
+	aliases {
+		ufs0 = &ufs0;
+	};
+
+	ufs_core_clk: ufs_core_clk {
+		compatible = "fixed-clock";
+		clock-frequency = <300000000>;
+		#clock-cells = <0>;
+	};
 };
 
 &soc {
@@ -38,4 +48,16 @@
 	status = "okay";
 	current-speed = <115200>;
 	clock-frequency = <100000000>;
+};
+
+&ufs0 {
+	status = "okay";
+	clocks = <&ufs_core_clk>;
+	clock-names = "core_clk";
+
+	ufs_disk0 {
+		compatible = "zephyr,ufs-disk";
+		disk-name = "UFS";
+		status = "okay";
+	};
 };
