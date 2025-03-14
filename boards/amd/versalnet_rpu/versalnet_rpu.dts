@@ -16,7 +16,7 @@
 		zephyr,ocm = &ocm;
 	};
 
-	wwdtclk: wwdtclk {
+	wwdtclk: wwdt-clk {
 		compatible = "fixed-clock";
 		clock-frequency = <150000000>;
 		#clock-cells = <0>;

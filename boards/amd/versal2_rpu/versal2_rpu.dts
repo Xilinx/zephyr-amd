@@ -20,7 +20,7 @@
 		ufs0 = &ufs0;
 	};
 
-	ufs_core_clk: ufs_core_clk {
+	ufs_core_clk: ufs-core-clk {
 		compatible = "fixed-clock";
 		clock-frequency = <300000000>;
 		#clock-cells = <0>;
