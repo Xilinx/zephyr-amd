@@ -33,6 +33,10 @@
 	};
 };
 
+&cpu0 {
+	 clock-frequency = <100000000>;
+};
+
 &soc {
 	sram0: memory@30000 {
 		compatible = "mmio-sram";
