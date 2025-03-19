@@ -119,5 +119,23 @@
 				compatible = "zephyr,mmc-disk";
 			};
 		};
+
+		spi0: spi@f1960000 {
+			compatible = "cdns,spi-r1p6";
+			status = "disabled";
+			reg = <0xf1960000 0x1000>;
+			interrupts = <GIC_SPI 23 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+
+		spi1: spi@f1970000 {
+			compatible = "cdns,spi-r1p6";
+			status = "disabled";
+			reg = <0xf1970000 0x1000>;
+			interrupts = <GIC_SPI 24 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
 	};
 };
