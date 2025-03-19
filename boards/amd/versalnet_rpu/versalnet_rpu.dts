@@ -27,6 +27,30 @@
 		clock-frequency = <200000000>;
 		#clock-cells = <0>;
 	};
+
+	spi_ref_clk: spi-ref-clk {
+		compatible = "fixed-clock";
+		status = "okay";
+		clock-frequency = <200000000>;
+		#clock-cells = <0> ;
+	};
+};
+
+&spi0 {
+	status = "okay";
+	cdns,num-ss-bits = <3>;
+	is-decoded-cs = <0>;
+	clocks = <&spi_ref_clk>;
+	flash@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <8000000>;
+		jedec-id = [ 20 20 14 ]; /* m25p80 */
+		size = <0x2000000>; /* 32Mb */
+		has-dpd;
+		t-enter-dpd = <10000>;
+		t-exit-dpd = <35000>;
+	};
 };
 
 &cpu0 {
