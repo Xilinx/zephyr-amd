@@ -3,11 +3,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 description: |
-  Cadence I2C controller version 1.4.
+  Cadence I2C controller.
 
   Example I2C device tree node:
     i2c@e0004000 {
-        compatible = "cdns,i2c-r1p14";
+        compatible = "cdns,i2c";
         clocks = <&clkc 38>;
         interrupts = <GIC_SPI 25 IRQ_TYPE_LEVEL_HIGH>;
         reg = <0xe0004000 0x1000>;
@@ -17,7 +17,7 @@ description: |
         fifo-depth = <8>;
     };
 
-compatible: "cdns,i2c-r1p14"
+compatible: "cdns,i2c"
 
 include: [i2c-controller.yaml, reset-device.yaml]
 
@@ -33,11 +33,10 @@ properties:
     required: true
 
   clock-frequency:
+    required: true
     description: Desired I2C bus clock frequency in Hz.
-    enum: [100000, 400000]
 
   fifo-depth:
     type: int
+    required: true
     description: Size of the data FIFO in bytes.
-    default: 16
-    enum: [2, 4, 8, 16, 32, 64, 128, 256]
