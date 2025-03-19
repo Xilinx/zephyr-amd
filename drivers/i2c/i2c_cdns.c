@@ -5,6 +5,7 @@
  */
 
 #include <zephyr/drivers/i2c.h>
+#include <zephyr/dt-bindings/i2c/i2c.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
@@ -22,6 +23,7 @@ LOG_MODULE_REGISTER(i2c_cadence, CONFIG_I2C_LOG_LEVEL);
 #define CDNS_I2C_IMR_OFFSET		0x20 /* IRQ Mask Register, RO */
 #define CDNS_I2C_IER_OFFSET		0x24 /* IRQ Enable Register, WO */
 #define CDNS_I2C_IDR_OFFSET		0x28 /* IRQ Disable Register, WO */
+#define CDNS_I2C_GFR_OFFSET		0x2C /* Glitch Filter Register, RW */
 
 /* Control Register Bit mask definitions */
 #define CDNS_I2C_CR_HOLD		BIT(4) /* Hold the I2C Bus */
@@ -30,6 +32,11 @@ LOG_MODULE_REGISTER(i2c_cadence, CONFIG_I2C_LOG_LEVEL);
 #define CDNS_I2C_CR_MS			BIT(1) /* 0 = Slave Mode, 1 = Master Mode */
 #define CDNS_I2C_CR_RW			BIT(0) /* Transfer Dir: 0 = Transmitter, 1 = Receiver */
 #define CDNS_I2C_CR_CLR_FIFO		BIT(6) /* Clears the FIFO on initialization */
+
+/* Master Enable Mask */
+#define CDNS_I2C_CR_MASTER_EN_MASK	(CDNS_I2C_CR_ACK_EN | \
+					 CDNS_I2C_CR_NEA | \
+					 CDNS_I2C_CR_MS)
 
 /* Dividers for clock generation */
 #define CDNS_I2C_CR_DIVA_SHIFT		14U
@@ -98,7 +105,6 @@ LOG_MODULE_REGISTER(i2c_cadence, CONFIG_I2C_LOG_LEVEL);
 /* Default timeout ticks for I2C operations */
 #define CDNS_I2C_TIMEOUT_TICKS		CDNS_I2C_TICKS_PER_SEC
 
-#define CDNS_I2C_FIFO_DEPTH_DEFAULT	16U /* Default FIFO depth for I2C operations */
 #define CDNS_I2C_MAX_TRANSFER_SIZE	255U /* Maximum transfer size for I2C data */
 
 /* Default transfer size */
@@ -116,13 +122,12 @@ LOG_MODULE_REGISTER(i2c_cadence, CONFIG_I2C_LOG_LEVEL);
 /* Event flag for I2C transfer completion */
 #define I2C_XFER_COMPLETION_EVENT	BIT(0)
 
-/* I2C Speed Definitions */
-#define CDNS_I2C_SPEED_STANDARD_HZ	(100000UL) /* Standard I2C speed (100 kHz) */
-#define CDNS_I2C_SPEED_FAST_HZ		(400000UL) /* Fast I2C speed (400 kHz) */
-
-/* Driver config */
+/**
+ * struct cdns_i2c_config - Cadence I2C device private constant structure
+ * @irq_config_func: function pointer to configure I2C IRQ
+ */
 struct cdns_i2c_config {
-	void (*irq_config_func)(const struct device *dev);
+	void (*irq_config_func)(void);
 };
 
 /**
@@ -130,8 +135,7 @@ struct cdns_i2c_config {
  * @membase: Base address of the I2C device.
  * @ctrl_reg: Cached value of the control register.
  * @input_clk: Input clock to I2C controller.
- * @i2c_clk: Maximum I2C clock speed.
- * @i2c_config: Configuration of I2C settings.
+ * @i2c_clk: Actual I2C clock speed.
  * @fifo_depth: The depth of the transfer FIFO.
  * @transfer_size: The maximum number of bytes in one transfer.
  * @bus_hold_flag: Flag used in repeated start for clearing HOLD bit.
@@ -150,7 +154,6 @@ struct cdns_i2c_data {
 	uint32_t ctrl_reg;
 	uint32_t input_clk;
 	uint32_t i2c_clk;
-	uint32_t i2c_config;
 	uint32_t fifo_depth;
 	uint32_t transfer_size;
 	uint32_t bus_hold_flag;
@@ -291,7 +294,7 @@ out:
 /**
  * cdns_i2c_setclk - Set the serial clock rate for the I2C device
  * @i2c_bus: Pointer to the I2C data structure
- * @clk_in: I2C clock input frequency in Hz
+ * @req_i2c_speed: requested I2C clock frequency in Hz
  *
  * This function sets the serial clock rate for the I2C device by configuring
  * the clock divisors in the device's control register. The device must be idle
@@ -309,18 +312,19 @@ out:
  *
  * Return: 0 on success, negative error code on failure
  */
-static int32_t cdns_i2c_setclk(struct cdns_i2c_data *i2c_bus, uint32_t clk_in)
+static int32_t cdns_i2c_setclk(struct cdns_i2c_data *i2c_bus, uint32_t req_i2c_speed)
 {
 	uint32_t div_a, div_b;
 	uint32_t ctrl_reg;
 	int32_t ret = 0;
-	uint32_t fscl = i2c_bus->i2c_clk;
+	uint32_t fscl = req_i2c_speed;
 
 	/* Calculate the divider values */
-	ret = cdns_i2c_calc_divs(&fscl, clk_in, &div_a, &div_b);
+	ret = cdns_i2c_calc_divs(&fscl, i2c_bus->input_clk, &div_a, &div_b);
 	if (ret != 0) {
 		goto out;
 	}
+	i2c_bus->i2c_clk = fscl; /* Update true SCL value */
 
 	/* Set new divider values in the control register */
 	ctrl_reg = i2c_bus->ctrl_reg;
@@ -339,48 +343,48 @@ out:
  * @dev: Pointer to the device structure representing the I2C bus
  * @dev_config: Configuration value containing the desired I2C bus speed
  *
- * This function configures the I2C bus speed based on the value provided in
- * @dev_config, which can be either I2C_SPEED_STANDARD (100 KHz) or I2C_SPEED_FAST (400 KHz).
+ * This function configures the I2C bus speed based on the value provided in @dev_config
  * It then sets the appropriate clock for the I2C bus, verifies the clock is valid, and
  * initializes the I2C peripheral. The configuration is saved to the device's data structure.
  *
- * Return: 0 on success, -EIO on failure
+ * Return: 0 on success, negative error value on failure
  */
 static int32_t cdns_i2c_configure(const struct device *dev, uint32_t dev_config)
 {
 	int32_t ret = 0;
 	struct cdns_i2c_data *i2c_bus = (struct cdns_i2c_data *)dev->data;
-	uint32_t speed = I2C_SPEED_GET(dev_config);
-	uint32_t i2c_speed;
+	uint32_t i2c_speed = 0U;
 
 	(void)k_mutex_lock(&i2c_bus->bus_mutex, K_FOREVER);
 
 	/* Check requested I2C Speed */
-	if (speed == I2C_SPEED_STANDARD) {
-		i2c_speed = CDNS_I2C_SPEED_STANDARD_HZ; /* 100 KHz */
-	} else if (speed == I2C_SPEED_FAST) {
-		i2c_speed = CDNS_I2C_SPEED_FAST_HZ; /* 400 KHz */
-	} else {
-		LOG_ERR("Unsupported I2C speed requested: %u", speed);
-		ret = -EIO;
+	switch (I2C_SPEED_GET(dev_config)) {
+	case I2C_SPEED_STANDARD:
+		i2c_speed = I2C_BITRATE_STANDARD; /* 100 KHz */
+		break;
+	case I2C_SPEED_FAST:
+		i2c_speed = I2C_BITRATE_FAST; /* 400 KHz */
+		break;
+	case I2C_SPEED_FAST_PLUS:
+		i2c_speed = I2C_BITRATE_FAST_PLUS; /* 1 MHz */
+		break;
+	default:
+		LOG_ERR("Unsupported I2C speed requested: %u", i2c_speed);
+		ret = -ERANGE;
 		goto out;
 	}
 
-	/* Set the I2C clock */
-	i2c_bus->i2c_clk = i2c_speed;
-	ret = cdns_i2c_setclk(i2c_bus, i2c_bus->input_clk);
+	/* Set I2C Speed (SCL frequency) */
+	ret = cdns_i2c_setclk(i2c_bus, i2c_speed);
 	if (ret != 0) {
-		LOG_ERR("Invalid SCL clock: %u Hz", i2c_bus->i2c_clk);
+		LOG_ERR("Invalid SCL clock: %u Hz", i2c_speed);
 		ret = -EIO;
 		goto out;
 	}
 
 	/* Enable the I2C peripheral */
-	i2c_bus->ctrl_reg |= CDNS_I2C_CR_ACK_EN | CDNS_I2C_CR_NEA | CDNS_I2C_CR_MS;
+	i2c_bus->ctrl_reg |= CDNS_I2C_CR_MASTER_EN_MASK;
 	cdns_i2c_enable_peripheral(i2c_bus);
-
-	/* Save I2C host configuration */
-	i2c_bus->i2c_config = dev_config;
 
 out:
 	(void)k_mutex_unlock(&i2c_bus->bus_mutex);
@@ -389,7 +393,7 @@ out:
 }
 
 /**
- * cdns_i2c_get_config - Retrieve the saved I2C configuration.
+ * cdns_i2c_get_config - Retrieve the current I2C configuration.
  * @dev: Pointer to the device structure.
  * @dev_config: Pointer to a variable where the configuration will be stored.
  *
@@ -399,15 +403,27 @@ static int32_t cdns_i2c_get_config(const struct device *dev, uint32_t *dev_confi
 {
 	int32_t ret = 0;
 	struct cdns_i2c_data *i2c_bus = (struct cdns_i2c_data *)dev->data;
+	uint32_t bus_speed = i2c_bus->i2c_clk;
+	uint32_t speed_cfg = 0U;
 
-	/* Check if the configuration is valid (non-zero) */
-	if (i2c_bus->i2c_config == 0U) {
-		ret = -EINVAL;
+	/* Retrieve Speed configuration from Actual Bus Speed */
+	if ((bus_speed > 0U) && (bus_speed <= I2C_BITRATE_STANDARD)) {
+		speed_cfg = I2C_SPEED_SET(I2C_SPEED_STANDARD);
+	} else if ((bus_speed > I2C_BITRATE_STANDARD) &&
+		   (bus_speed <= I2C_BITRATE_FAST)) {
+		speed_cfg = I2C_SPEED_SET(I2C_SPEED_FAST);
+	} else if ((bus_speed > I2C_BITRATE_FAST) &&
+		   (bus_speed <= I2C_BITRATE_FAST_PLUS)) {
+		speed_cfg = I2C_SPEED_SET(I2C_SPEED_FAST_PLUS);
 	} else {
-		/* Return the saved configuration */
-		*dev_config = i2c_bus->i2c_config;
+		ret = -ERANGE;
+		goto out;
 	}
 
+	/* Return current configuration */
+	*dev_config = (speed_cfg | I2C_MODE_CONTROLLER);
+
+out:
 	return ret;
 }
 
@@ -1001,20 +1017,19 @@ static int32_t cdns_i2c_init(const struct device *dev)
 	k_event_init(&i2c_bus->xfer_done);
 
 	/* Configure the control reg flags, transfer size */
-	i2c_bus->ctrl_reg = CDNS_I2C_CR_ACK_EN | CDNS_I2C_CR_NEA | CDNS_I2C_CR_MS;
+	i2c_bus->ctrl_reg = CDNS_I2C_CR_MASTER_EN_MASK;
 	i2c_bus->transfer_size = CDNS_I2C_TRANSFER_SIZE_DEFAULT;
 
 	/* Set the I2C clock frequency */
-	ret = cdns_i2c_setclk(i2c_bus, i2c_bus->input_clk);
+	ret = cdns_i2c_setclk(i2c_bus, i2c_bus->i2c_clk);
 	if (ret != 0) {
 		LOG_ERR("Invalid SCL clock: %u Hz", i2c_bus->i2c_clk);
 		ret = -EINVAL;
 		goto out;
 	}
-	i2c_bus->i2c_config = I2C_MODE_CONTROLLER | i2c_bus->i2c_clk;
 
 	/* Configure IRQ */
-	config->irq_config_func(dev);
+	config->irq_config_func();
 
 	/* Enable the I2C peripheral */
 	cdns_i2c_enable_peripheral(i2c_bus);
@@ -1032,34 +1047,32 @@ static const struct i2c_driver_api cdns_i2c_driver_api = {
 	.transfer = cdns_i2c_master_transfer,
 };
 
-#define CADENCE_I2C_INIT(n, compat)							    \
-	static void cdns_i2c_config_func_##compat##_##n(const struct device *dev);	    \
-											    \
-	static const struct cdns_i2c_config cdns_i2c_config_##compat##_##n = {		    \
-		.irq_config_func = cdns_i2c_config_func_##compat##_##n,			    \
-	};										    \
-											    \
-	static struct cdns_i2c_data cdns_i2c_data_##compat##_##n = {			    \
-		.membase = DT_INST_REG_ADDR(n),						    \
-		.input_clk = DT_INST_PROP_BY_PHANDLE(n, clocks, clock_frequency),	    \
-		.i2c_clk = DT_INST_PROP_OR(n, clock_frequency, CDNS_I2C_SPEED_STANDARD_HZ), \
-		.fifo_depth = DT_INST_PROP_OR(n, fifo_depth, CDNS_I2C_FIFO_DEPTH_DEFAULT),  \
-	};										    \
-											    \
-	I2C_DEVICE_DT_INST_DEFINE(n, cdns_i2c_init, NULL,				    \
-				&cdns_i2c_data_##compat##_##n,				    \
-				&cdns_i2c_config_##compat##_##n, POST_KERNEL,		    \
-				CONFIG_I2C_INIT_PRIORITY, &cdns_i2c_driver_api);	    \
-											    \
-	static void cdns_i2c_config_func_##compat##_##n(const struct device *dev)	    \
-	{										    \
-		ARG_UNUSED(dev);							    \
-											    \
-		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority), cdns_i2c_isr,	    \
-			    DEVICE_DT_INST_GET(n), 0);					    \
-											    \
-		irq_enable(DT_INST_IRQN(n));						    \
+#define CADENCE_I2C_INIT(n, compat)							\
+	static void cdns_i2c_config_func_##compat##_##n(void);				\
+											\
+	static const struct cdns_i2c_config cdns_i2c_config_##compat##_##n = {		\
+		.irq_config_func = cdns_i2c_config_func_##compat##_##n,			\
+	};										\
+											\
+	static struct cdns_i2c_data cdns_i2c_data_##compat##_##n = {			\
+		.membase = DT_INST_REG_ADDR(n),						\
+		.input_clk = DT_INST_PROP_BY_PHANDLE(n, clocks, clock_frequency),	\
+		.i2c_clk = DT_INST_PROP(n, clock_frequency),				\
+		.fifo_depth = DT_INST_PROP(n, fifo_depth),				\
+	};										\
+											\
+	I2C_DEVICE_DT_INST_DEFINE(n, cdns_i2c_init, NULL,				\
+				&cdns_i2c_data_##compat##_##n,				\
+				&cdns_i2c_config_##compat##_##n, POST_KERNEL,		\
+				CONFIG_I2C_INIT_PRIORITY, &cdns_i2c_driver_api);	\
+											\
+	static void cdns_i2c_config_func_##compat##_##n(void)				\
+	{										\
+		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority), cdns_i2c_isr,	\
+			    DEVICE_DT_INST_GET(n), 0);					\
+											\
+		irq_enable(DT_INST_IRQN(n));						\
 	}
 
-#define DT_DRV_COMPAT cdns_i2c_r1p14
+#define DT_DRV_COMPAT cdns_i2c
 DT_INST_FOREACH_STATUS_OKAY_VARGS(CADENCE_I2C_INIT, DT_DRV_COMPAT)

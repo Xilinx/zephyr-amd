@@ -5,7 +5,7 @@
 config I2C_CADENCE
 	bool "Cadence I2C driver"
 	default y
-	depends on DT_HAS_CDNS_I2C_R1P14_ENABLED
+	depends on DT_HAS_CDNS_I2C_ENABLED
 	select EVENTS
 	help
 	  Enable Cadence I2C driver.
