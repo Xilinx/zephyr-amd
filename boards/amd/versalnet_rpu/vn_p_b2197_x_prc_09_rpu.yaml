@@ -1,5 +1,5 @@
-identifier: tenzing2_se9_rpu
-name: AMD Development board for VersalNet RPU - Tenzing2 se9
+identifier: vn_p_b2197_x_prc_09_rpu
+name: AMD Development board for VersalNet RPU - VN-P-B2197 with X-PRC-09
 arch: arm
 toolchain:
   - zephyr
