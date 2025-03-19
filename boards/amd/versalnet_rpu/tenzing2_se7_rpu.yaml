@@ -1,0 +1,12 @@
+identifier: tenzing2_se7_rpu
+name: AMD Development board for VersalNet RPU - Tenzing2 se7
+arch: arm
+toolchain:
+  - zephyr
+supported:
+  - spi
+testing:
+  ignore_tags:
+    - net
+    - bluetooth
+vendor: amd
