@@ -17,7 +17,7 @@ static const struct device *const tst_ufshcdev = DEVICE_DT_GET_OR_NULL(UFS_NODE)
 static struct ufs_host_controller *tst_ufshc;
 
 /* UFS card initialization */
-ZTEST(ufs_stack, test0_init)
+ZTEST(ufs_stack, test_0_init)
 {
 	int32_t ret;
 
@@ -26,7 +26,7 @@ ZTEST(ufs_stack, test0_init)
 }
 
 /* Read descriptor information from UFS card */
-ZTEST(ufs_stack, test1_ioctl_desc)
+ZTEST(ufs_stack, test_1_ioctl_desc)
 {
 	int32_t ret;
 	struct sg_io_req sg_req;
@@ -58,7 +58,7 @@ ZTEST(ufs_stack, test1_ioctl_desc)
 }
 
 /* Read attribute value from UFS card */
-ZTEST(ufs_stack, test2_ioctl_attr)
+ZTEST(ufs_stack, test_2_ioctl_attr)
 {
 	int32_t ret;
 	struct sg_io_req sg_req;
@@ -86,7 +86,7 @@ ZTEST(ufs_stack, test2_ioctl_attr)
 }
 
 /* Read flag value from UFS card */
-ZTEST(ufs_stack, test3_ioctl_flag)
+ZTEST(ufs_stack, test_3_ioctl_flag)
 {
 	int32_t ret;
 	struct sg_io_req sg_req;

@@ -30,14 +30,14 @@ static uint8_t rd_buf[SCSI_TEST_BUF_SIZE] __aligned(CONFIG_UFSHC_BUFFER_ALIGNMEN
 #endif /* CONFIG_TEST_SCSI_UFS_RW */
 
 /* Verify that SCSI Device Handle is Initialized */
-ZTEST(scsi_stack, test0_init)
+ZTEST(scsi_stack, test_0_init)
 {
 	tst_sdev = scsi_device_lookup_by_host(tst_shost, SCSI_TEST_LUN);
 	zassert_not_null(tst_sdev, "SCSI Device for SCSI_TEST_LUN is NULL");
 }
 
 /* Verify SCSI cmds using IOCTL */
-ZTEST(scsi_stack, test1_scsi_cmd)
+ZTEST(scsi_stack, test_1_scsi_cmd)
 {
 	int32_t rc;
 
@@ -51,7 +51,7 @@ ZTEST(scsi_stack, test1_scsi_cmd)
 }
 
 /* Verify SCSI Generic (SG) IOCTL */
-ZTEST(scsi_stack, test2_scsi_sgio)
+ZTEST(scsi_stack, test_2_scsi_sgio)
 {
 	int32_t rc;
 	struct sg_io_req req;
@@ -74,7 +74,7 @@ ZTEST(scsi_stack, test2_scsi_sgio)
 
 #if IS_ENABLED(CONFIG_TEST_SCSI_UFS_RW)
 /* Verify that SCSI stack can read/write to UFS card */
-ZTEST(scsi_stack, test3_scsi_rw)
+ZTEST(scsi_stack, test_3_scsi_rw)
 {
 	int32_t rc;
 	int32_t block_addr = 0;
