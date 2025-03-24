@@ -84,26 +84,42 @@ class LopperCommand(WestCommand):
         workspace = os.path.join(os.path.abspath(args.ws_dir), "lopper_metadata")
         if not os.path.exists(workspace):
             os.makedirs(workspace)
-        generated_dts_file = os.path.join(workspace, "mbv32.dts")
-        workspace_dts_file = os.path.join(os.path.abspath(args.ws_dir), "boards", "amd", "mbv32", "mbv32.dts")
-        workspace_kconfig_defconfig = os.path.join(os.path.abspath(args.ws_dir), "soc", "xlnx", "mbv32", "Kconfig.defconfig")
-        generated_kconfig_defconfig = os.path.join(workspace, "Kconfig.defconfig")
-        workspace_kconfig_soc = os.path.join(os.path.abspath(args.ws_dir), "soc", "xlnx", "mbv32", "Kconfig")
-        generated_kconfig_soc = os.path.join(workspace, "Kconfig")
+
         lops_dir = os.path.join(get_dir_path(lopper.__file__), "lops")
+        if "microblaze" in proc:
+            generated_dts_file = os.path.join(workspace, "mbv32.dts")
+            workspace_dts_file = os.path.join(os.path.abspath(args.ws_dir), "boards", "amd", "mbv32", "mbv32.dts")
+            workspace_kconfig_defconfig = os.path.join(os.path.abspath(args.ws_dir), "soc", "xlnx", "mbv32", "Kconfig.defconfig")
+            generated_kconfig_defconfig = os.path.join(workspace, "Kconfig.defconfig")
+            workspace_kconfig_soc = os.path.join(os.path.abspath(args.ws_dir), "soc", "xlnx", "mbv32", "Kconfig")
+            generated_kconfig_soc = os.path.join(workspace, "Kconfig")
 
+            lops_file = os.path.join(lops_dir, "lop-microblaze-riscv.dts")
+            lops_file_intc = os.path.join(lops_dir, "lop-mbv-zephyr-intc.dts")
+            runcmd(f"lopper -f --enhanced -O {workspace} -i {lops_file} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
+                    cwd = workspace)
+            runcmd(f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-zephyr.dts -- gen_domain_dts {proc} zephyr_dt",
+                    cwd = workspace)
+            runcmd(f"lopper -f --enhanced -O {workspace} -i {lops_file_intc}  {workspace}/system-zephyr.dts  {workspace}/mbv32.dts",
+                    cwd = workspace)
 
-        lops_file = os.path.join(lops_dir, "lop-microblaze-riscv.dts")
-        lops_file_intc = os.path.join(lops_dir, "lop-mbv-zephyr-intc.dts")
-        runcmd(f"lopper -f --enhanced -O {workspace} -i {lops_file} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
-                cwd = workspace)
-        runcmd(f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-zephyr.dts -- gen_domain_dts {proc} zephyr_dt",
-                cwd = workspace)
-        runcmd(f"lopper -f --enhanced -O {workspace} -i {lops_file_intc}  {workspace}/system-zephyr.dts  {workspace}/mbv32.dts",
-                 cwd = workspace)
+            shutil.copy(generated_dts_file, workspace_dts_file)
+            shutil.copy(generated_kconfig_defconfig, workspace_kconfig_defconfig)
+            shutil.copy(generated_kconfig_soc, workspace_kconfig_soc)
+            shutil.rmtree(workspace)
+        elif "cortexr52" in proc:
+            lops_file = os.path.join(lops_dir, "lop-r52-imux.dts")
+            if "psx_cortexr52" in proc:
+                generated_dts_file = os.path.join(workspace, "versalnet_rpu.dts")
+                workspace_dts_file = os.path.join(os.path.abspath(args.ws_dir), "boards", "amd", "versalnet_rpu", "versalnet_rpu.dts")
+            else:
+                generated_dts_file = os.path.join(workspace, "versal2_rpu.dts")
+                workspace_dts_file = os.path.join(os.path.abspath(args.ws_dir), "boards", "amd", "versal2_rpu", "versal2_rpu.dts")
 
-        shutil.copy(generated_dts_file, workspace_dts_file)
-        shutil.copy(generated_kconfig_defconfig, workspace_kconfig_defconfig)
-        shutil.copy(generated_kconfig_soc, workspace_kconfig_soc)
-        shutil.rmtree(workspace)
+            runcmd(f"lopper -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
+                    cwd = workspace)
+            runcmd(f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
+                    cwd = workspace)
+            runcmd(f"lopper -f --enhanced -O {workspace} {workspace}/system-imux.dts  {workspace_dts_file} -- gen_domain_dts {proc} zephyr_dt",
+                    cwd = workspace)
 
