@@ -7,8 +7,8 @@ common:
   filter: dt_alias_exists("ufs0")
 tests:
   scsi.ufs.scsi_basic:
-    depends_on: ufshc
+    depends_on: ufs
   scsi.ufs.scsi_rw:
-    depends_on: ufshc
+    depends_on: ufs
     extra_configs:
-      - CONFIG_TEST_SCSI_RW=y
+      - CONFIG_TEST_SCSI_UFS_RW=y
