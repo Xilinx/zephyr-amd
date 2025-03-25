@@ -6,8 +6,9 @@
  */
 
 #include "versalnet_rpu.dts"
+/delete-node/ &spi0;
 
-&spi0 {
+&spi1 {
 	status = "okay";
 	cdns,num-ss-bits = <3>;
 	is-decoded-cs = <0>;
