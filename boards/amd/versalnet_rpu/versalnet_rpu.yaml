@@ -12,3 +12,4 @@ vendor: amd
 supported:
   - watchdog
   - sdhc
+  - dma

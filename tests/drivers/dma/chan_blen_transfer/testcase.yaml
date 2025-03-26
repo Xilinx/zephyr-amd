@@ -18,3 +18,7 @@ tests:
     filter: dt_nodelabel_enabled("tst_dma0")
     platform_allow:
       - nucleo_c031c6
+  drivers.dma.chan_blen_transfer.versalnet_rpu:
+    filter: dt_compat_enabled("xlnx,zynqmp-dma")
+    platform_allow:
+      - versalnet_rpu
