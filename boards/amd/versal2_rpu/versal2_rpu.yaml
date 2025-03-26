@@ -9,6 +9,7 @@ supported:
   - scsi
   - ufs
   - mbox
+  - sdhc
 testing:
   ignore_tags:
     - net
