@@ -28,3 +28,5 @@ testing:
     - xip
     - zdsp
 vendor: amd
+supported:
+  - gpio
