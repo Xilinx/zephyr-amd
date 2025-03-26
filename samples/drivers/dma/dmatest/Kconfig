@@ -1,0 +1,10 @@
+# Copyright (c) 2025 Advance Micro devices
+# SPDX-License-Identifier: Apache-2.0
+
+mainmenu "DMA TEST"
+
+source "Kconfig.zephyr"
+
+config DMA_TRANSFER_CHANNEL
+	int "DMA channel to use"
+	default 8
