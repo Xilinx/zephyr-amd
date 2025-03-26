@@ -6,6 +6,7 @@ toolchain:
 supported:
   - scsi
   - ufs
+  - sdhc
 testing:
   ignore_tags:
     - net
