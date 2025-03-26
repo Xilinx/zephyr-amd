@@ -14,3 +14,4 @@ supported:
   - sdhc
   - mbox
   - watchdog
+  - dma
