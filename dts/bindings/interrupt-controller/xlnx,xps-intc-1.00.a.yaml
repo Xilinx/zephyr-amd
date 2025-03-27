@@ -23,6 +23,9 @@ properties:
     type: int
     required: true
 
+  xlnx,is-fast:
+    type: int
+
 interrupt-cells:
   - irq
   - priority
