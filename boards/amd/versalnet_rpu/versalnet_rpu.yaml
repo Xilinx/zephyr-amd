@@ -13,3 +13,5 @@ supported:
   - watchdog
   - sdhc
   - dma
+  - spi
+  - flash
