@@ -15,3 +15,5 @@ supported:
   - mbox
   - watchdog
   - dma
+  - spi
+  - flash
