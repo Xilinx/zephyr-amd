@@ -31,6 +31,7 @@
 LOG_MODULE_REGISTER(xlnx_intc);
 
 #define DT_DRV_COMPAT xlnx_xps_intc_1_00_a
+#define IS_FAST_INTR_ENABLED	DT_PROP(DT_INST(0, DT_DRV_COMPAT), xlnx_is_fast)
 
 #define BASE_ADDRESS	 DT_INST_REG_ADDR(0)
 #define INTC_REG(offset) (uint32_t *)(BASE_ADDRESS + offset)
@@ -135,6 +136,9 @@ void xlnx_intc_irq_acknowledge(uint32_t mask)
 
 int32_t xlnx_intc_controller_init(void)
 {
+#if (IS_FAST_INTR_ENABLED == 1)
+	uint32_t vector_base = 0x10;
+#endif
 	if (intc_state.is_started == true) {
 		return -EEXIST;
 	}
@@ -149,11 +153,14 @@ int32_t xlnx_intc_controller_init(void)
 	xlnx_intc_write(0, XIN_IER_OFFSET);
 	xlnx_intc_write(0xFFFFFFFF, XIN_IAR_OFFSET);
 
-#if defined(CONFIG_XLNX_INTC_INITIALIZE_IVAR_REGISTERS)
+#if (IS_FAST_INTR_ENABLED == 1)
+#if defined(__riscv)
+	vector_base = csr_read(mtvec);
+#endif
 	xlnx_intc_write(0, XIN_IMR_OFFSET);
 
 	for (int idx = 0; idx < 32; idx++) {
-		xlnx_intc_write(0x10, XIN_IVAR_OFFSET + (idx * 4));
+		xlnx_intc_write(vector_base, XIN_IVAR_OFFSET + (idx * 4));
 	}
 #endif
 
