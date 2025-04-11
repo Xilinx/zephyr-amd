@@ -150,6 +150,66 @@
 			xlnx,bus-width = <64>;
 		};
 
+		wwdt0: watchdog@ecc10000 {
+			compatible = "xlnx,versal-wwdt";
+			status = "disabled";
+			reg = <0xecc10000 0x10000>;
+		};
+
+		wwdt1: watchdog@ecd10000 {
+			compatible = "xlnx,versal-wwdt";
+			status = "disabled";
+			reg = <0xecd10000 0x10000>;
+		};
+
+		wwdt2: watchdog@ece10000 {
+			compatible = "xlnx,versal-wwdt";
+			status = "disabled";
+			reg = <0xece10000 0x10000>;
+		};
+
+		wwdt3: watchdog@ecf10000 {
+			compatible = "xlnx,versal-wwdt";
+			status = "disabled";
+			reg = <0xecf10000 0x10000>;
+		};
+
+		lpd_wwdt0: watchdog@eb000000 {
+			compatible = "xlnx,versal-wwdt";
+			status = "disabled";
+			reg = <0xeb000000 0x10000>;
+		};
+
+		lpd_wwdt1: watchdog@eb010000 {
+			compatible = "xlnx,versal-wwdt";
+			status = "disabled";
+			reg = <0xeb010000 0x10000>;
+		};
+
+		lpd_wwdt2: watchdog@eb020000 {
+			compatible = "xlnx,versal-wwdt";
+			status = "disabled";
+			reg = <0xeb020000 0x10000>;
+		};
+
+		lpd_wwdt3: watchdog@eb030000 {
+			compatible = "xlnx,versal-wwdt";
+			status = "disabled";
+			reg = <0xeb030000 0x10000>;
+		};
+
+		lpd_wwdt4: watchdog@eb040000 {
+			compatible = "xlnx,versal-wwdt";
+			status = "disabled";
+			reg = <0xeb040000 0x10000>;
+		};
+
+		pmc_wwdt: watchdog@f03f0000 {
+			compatible = "xlnx,versal-wwdt";
+			status = "disabled";
+			reg = <0xf03f0000 0x10000>;
+		};
+
 		ipi0: mailbox@eb330000 {
 			compatible = "xlnx,mbox-versal-ipi-mailbox";
 			status = "disabled";
