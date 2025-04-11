@@ -25,6 +25,7 @@
 		dma5 = &adma5;
 		dma6 = &adma6;
 		dma7 = &adma7;
+		watchdog0 = &lpd_wwdt0;
 	};
 
 	ufs_core_clk: ufs-core-clk {
@@ -43,6 +44,12 @@
 		compatible = "fixed-clock";
 		#clock-cells = <0>;
 		clock-frequency = <450000000>;
+	};
+
+	wwdtclk: wwdtclk {
+		compatible = "fixed-clock";
+		clock-frequency = <150000000>;
+		#clock-cells = <0>;
 	};
 };
 
@@ -140,4 +147,9 @@
 &adma7 {
 	status = "okay";
 	clocks = <&adma_ref_clk>, <&adma_ref_clk>;
+};
+
+&lpd_wwdt0 {
+	status = "okay";
+	clocks = <&wwdtclk>;
 };
