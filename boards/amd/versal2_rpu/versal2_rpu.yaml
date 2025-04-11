@@ -8,6 +8,7 @@ supported:
   - scsi
   - ufs
   - sdhc
+  - watchdog
 testing:
   ignore_tags:
     - net

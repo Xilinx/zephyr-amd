@@ -45,6 +45,12 @@
 		#clock-cells = <0>;
 		clock-frequency = <450000000>;
 	};
+
+	wwdtclk: wwdtclk {
+		compatible = "fixed-clock";
+		clock-frequency = <150000000>;
+		#clock-cells = <0>;
+	};
 };
 
 &cpu0 {
@@ -135,4 +141,9 @@
 &adma7 {
 	status = "okay";
 	clocks = <&adma_ref_clk>, <&adma_ref_clk>;
+};
+
+&lpd_wwdt0 {
+	status = "okay";
+	clocks = <&wwdtclk>;
 };
