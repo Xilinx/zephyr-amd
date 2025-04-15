@@ -439,7 +439,7 @@
 				interrupts = <0x19>;
 				reg = <0x00 0xf1920000 0x00 0x10000 0x00>;
 				reset-gpios = <0x1a 0x05>;
-				chardev = "serial2";
+				chardev = "con";
 				phandle = <0x11a>;
 			};
 
@@ -448,7 +448,7 @@
 				interrupts = <0x1a>;
 				reg = <0x00 0xf1930000 0x00 0x10000 0x00>;
 				reset-gpios = <0x1a 0x06>;
-				chardev = "con";
+				chardev = "serial3";
 				phandle = <0x11b>;
 			};
 
