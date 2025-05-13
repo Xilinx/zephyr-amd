@@ -1,5 +1,25 @@
 #
-# Copyright (c) 2024 Advanced Micro Devices, Inc.
+# Copyright (c) 2024 - 2025 Advanced Micro Devices, Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
+
+if BOARD_MBV32
+config RISCV_ISA_RV32I
+	default y
+
+config RISCV_ISA_EXT_M
+	default y
+
+config RISCV_ISA_EXT_A
+	default y
+
+config RISCV_ISA_EXT_C
+	default y
+
+config RISCV_ISA_EXT_ZICSR
+	default y
+
+config RISCV_ISA_EXT_ZIFENCEI
+	default y
+endif

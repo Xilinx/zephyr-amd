@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2024 Advanced Micro Devices, Inc.
+# Copyright (c) 2024 - 2025 Advanced Micro Devices, Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -8,12 +8,6 @@ config SOC_MBV32
 	select RISCV
 	select ATOMIC_OPERATIONS_C
 	select INCLUDE_RESET_VECTOR
-	select RISCV_ISA_RV32I
-	select RISCV_ISA_EXT_M
-	select RISCV_ISA_EXT_A
-	select RISCV_ISA_EXT_C
-	select RISCV_ISA_EXT_ZICSR
-	select RISCV_ISA_EXT_ZIFENCEI
 	imply ARCH_CPU_IDLE_CUSTOM
 	select CLOCK_CONTROL
 	select CLOCK_CONTROL_FIXED_RATE_CLOCK
