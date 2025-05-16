@@ -16,10 +16,10 @@
 
 #include "dma_xilinx_adma.h"
 
-#if DT_HAS_COMPAT_STATUS_OKAY(xlnx_zynqmp_dma)
-#define DT_DRV_COMPAT xlnx_zynqmp_dma
-#elif DT_HAS_COMPAT_STATUS_OKAY(amd_versal2_dma)
-#define DT_DRV_COMPAT amd_versal2_dma
+#if DT_HAS_COMPAT_STATUS_OKAY(xlnx_zynqmp_dma_1_0)
+#define DT_DRV_COMPAT xlnx_zynqmp_dma_1_0
+#elif DT_HAS_COMPAT_STATUS_OKAY(amd_versal2_dma_1_0)
+#define DT_DRV_COMPAT amd_versal2_dma_1_0
 #endif
 
 LOG_MODULE_REGISTER(dma_xilinx_adma, CONFIG_DMA_LOG_LEVEL);

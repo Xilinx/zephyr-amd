@@ -5,6 +5,6 @@
 
 description: XILINX ADMA
 
-compatible: "amd,versal2-dma"
+compatible: "amd,versal2-dma-1.0"
 
 include: xlnx,adma.yaml

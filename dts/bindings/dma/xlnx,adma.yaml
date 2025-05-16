@@ -5,7 +5,7 @@
 
 description: XILINX ADMA
 
-compatible: "xlnx,zynqmp-dma"
+compatible: "xlnx,zynqmp-dma-1.0"
 
 include: dma-controller.yaml
 

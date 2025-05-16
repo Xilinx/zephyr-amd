@@ -116,12 +116,12 @@
 struct __attribute__((__packed__)) dma_xilinx_adma_registers {
 	uint32_t err_cr;		/* Error control register */
 	uint32_t reserved[63];		/* Reserved space */
-#if DT_HAS_COMPAT_STATUS_OKAY(xlnx_zynqmp_dma)
+#if DT_HAS_COMPAT_STATUS_OKAY(xlnx_zynqmp_dma_1_0)
 	uint32_t chan_isr;		/* Interrupt Status Register */
 	uint32_t chan_imr;		/* Interrupt Mask Register */
 	uint32_t chan_ien;		/* Interrupt Enable Register */
 	uint32_t chan_ids;		/* Interrupt Disable Register */
-#elif DT_HAS_COMPAT_STATUS_OKAY(amd_versal2_dma)
+#elif DT_HAS_COMPAT_STATUS_OKAY(amd_versal2_dma_1_0)
 	uint32_t chan_err_isr;		/* Error Status Register */
 	uint32_t chan_err_imr;		/* Error Mask Register */
 	uint32_t chan_err_ien;		/* Error Enable Register */
@@ -156,7 +156,7 @@ struct __attribute__((__packed__)) dma_xilinx_adma_registers {
 	uint32_t reserved2[26];		/* Register Space */
 	uint32_t chan_cntrl2;		/* Control Register */
 	uint32_t reserved3[129];
-#if DT_HAS_COMPAT_STATUS_OKAY(amd_versal2_dma)
+#if DT_HAS_COMPAT_STATUS_OKAY(amd_versal2_dma_1_0)
 	uint32_t chan_isr;              /* Interrupt Status Register */
 	uint32_t chan_imr;              /* Interrupt Mask Register */
 	uint32_t chan_ien;              /* Interrupt Enable Register */

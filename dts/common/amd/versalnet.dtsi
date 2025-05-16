@@ -139,7 +139,7 @@
 		};
 
 		adma0: dma-controller@ebd00000 {
-			compatible = "xlnx,zynqmp-dma";
+			compatible = "xlnx,zynqmp-dma-1.0";
 			status = "disabled";
 			reg = <0xebd00000 0x10000>;
 			#dma-cells = <1>;
@@ -150,7 +150,7 @@
 		};
 
 		adma1: dma-controller@ebd10000 {
-			compatible = "xlnx,zynqmp-dma";
+			compatible = "xlnx,zynqmp-dma-1.0";
 			status = "disabled";
 			reg = <0xebd10000 0x10000>;
 			#dma-cells = <1>;
@@ -161,7 +161,7 @@
 		};
 
 		adma2: dma-controller@ebd20000 {
-			compatible = "xlnx,zynqmp-dma";
+			compatible = "xlnx,zynqmp-dma-1.0";
 			status = "disabled";
 			reg = <0xebd20000 0x10000>;
 			#dma-cells = <1>;
@@ -172,7 +172,7 @@
 		};
 
 		adma3: dma-controller@ebd30000 {
-			compatible = "xlnx,zynqmp-dma";
+			compatible = "xlnx,zynqmp-dma-1.0";
 			status = "disabled";
 			reg = <0xebd30000 0x10000>;
 			#dma-cells = <1>;
@@ -183,7 +183,7 @@
 		};
 
 		adma4: dma-controller@ebd40000 {
-			compatible = "xlnx,zynqmp-dma";
+			compatible = "xlnx,zynqmp-dma-1.0";
 			status = "disabled";
 			reg = <0xebd40000 0x10000>;
 			#dma-cells = <1>;
@@ -194,7 +194,7 @@
 		};
 
 		adma5: dma-controller@ebd50000 {
-			compatible = "xlnx,zynqmp-dma";
+			compatible = "xlnx,zynqmp-dma-1.0";
 			status = "disabled";
 			reg = <0xebd50000 0x10000>;
 			#dma-cells = <1>;
@@ -205,7 +205,7 @@
 		};
 
 		adma6: dma-controller@ebd60000 {
-			compatible = "xlnx,zynqmp-dma";
+			compatible = "xlnx,zynqmp-dma-1.0";
 			status = "disabled";
 			reg = <0xebd60000 0x10000>;
 			#dma-cells = <1>;
@@ -216,7 +216,7 @@
 		};
 
 		adma7: dma-controller@ebd70000 {
-			compatible = "xlnx,zynqmp-dma";
+			compatible = "xlnx,zynqmp-dma-1.0";
 			status = "disabled";
 			reg = <0xebd70000 0x10000>;
 			#dma-cells = <1>;

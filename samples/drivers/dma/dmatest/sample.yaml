@@ -14,10 +14,10 @@ tests:
     integration_platforms:
       - versalnet_rpu
   sample.drivers.dma.versalnet_rpu:
-    filter: dt_compat_enabled("xlnx,zynqmp-dma")
+    filter: dt_compat_enabled("xlnx,zynqmp-dma-1.0")
     platform_allow:
       - versalnet_rpu
   sample.drivers.dma.versal2_rpu:
-    filter: dt_compat_enabled("amd,versal2-dma")
+    filter: dt_compat_enabled("amd,versal2-dma-1.0")
     platform_allow:
       - versal2_rpu

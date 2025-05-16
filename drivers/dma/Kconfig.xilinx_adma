@@ -7,7 +7,7 @@
 config DMA_XILINX_ADMA
 	bool "Using Xilinx ADMA driver"
 	default y
-	depends on DT_HAS_XLNX_ZYNQMP_DMA_ENABLED || DT_HAS_AMD_VERSAL2_DMA_ENABLED
+	depends on DT_HAS_XLNX_ZYNQMP_DMA_1_0_ENABLED || DT_HAS_AMD_VERSAL2_DMA_1_0_ENABLED
 	select CACHE_MANAGEMENT
 	select EVENTS
 	help
