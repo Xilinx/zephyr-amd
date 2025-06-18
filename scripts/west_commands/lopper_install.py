@@ -46,7 +46,10 @@ class LopperInstall(WestCommand):
         self.install_lopper()
 
     def install_lopper(self):
-        env_path = os.environ.get("VIRTUAL_ENV")
-        lopper_dir = os.path.join(env_path, "../", "lopper")
+        path = os.path.abspath(os.getcwd())
+        lopper_dir = os.path.join(path, "../", "lopper")
+        current_dir = os.path.basename(os.getcwd())
+        if current_dir != "zephyr":
+            raise RuntimeError("west lopper-install command must be run inside the 'zephyr' directory")
         runcmd(f"pip install ./[dt,server,yaml,pcpp]",
                 cwd = lopper_dir)
