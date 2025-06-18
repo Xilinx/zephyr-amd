@@ -7,7 +7,25 @@ import sys
 import lopper
 import os
 import shutil
+import yaml
 from west.commands import WestCommand
+
+def fetch_yaml_data(config_file: str, dir_type: str):
+    """
+    Reads the data from a yaml configuration file, raises assertion if file
+    doesn't exist.
+
+    Args:
+        | config_file: The yaml configuration file path
+        | dir_type: Being used for raising a meaningful assertion.
+    Returns:
+        data: The read data from yaml file
+    """
+    assert os.path.isfile(config_file), f"Could not find valid {dir_type} at {get_dir_path(config_file)}"
+    print("config file", config_file)
+    with open(config_file) as f:
+        data = yaml.safe_load(f)
+    return data
 
 def get_dir_path(fpath):
     """
@@ -86,7 +104,16 @@ class LopperCommand(WestCommand):
             os.makedirs(workspace)
 
         lops_dir = os.path.join(get_dir_path(lopper.__file__), "lops")
-        if "microblaze" in proc:
+        runcmd(f"lopper --werror -f -O {workspace} -i lop-cpulist.dts {sdt}", cwd=workspace)
+        cpu_list_file = os.path.join(workspace, "cpulist.yaml")
+        avail_cpu_data = fetch_yaml_data(cpu_list_file, "cpulist")
+        if proc not in avail_cpu_data.keys():
+            print(
+                    f"ERROR: Please pass a valid processor name. Valid Processor Names for the given SDT are: {list(avail_cpu_data.keys())}"
+            )
+            sys.exit(1)
+        proc_ip_name = avail_cpu_data[proc]
+        if "microblaze_riscv" in proc_ip_name:
             generated_dts_file = os.path.join(workspace, "mbv32.dts")
             workspace_dts_file = os.path.join(os.path.abspath(args.ws_dir), "boards", "amd", "mbv32", "mbv32.dts")
             workspace_kconfig_defconfig = os.path.join(os.path.abspath(args.ws_dir), "soc", "xlnx", "mbv32", "Kconfig.defconfig")
