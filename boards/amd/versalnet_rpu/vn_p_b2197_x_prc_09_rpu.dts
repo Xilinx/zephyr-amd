@@ -40,9 +40,9 @@
 	clocks = <&i2c_ref_clk>;
 	clock-frequency = <400000>;
 
-	eeprom1: eeprom@51 {
+	eeprom1: eeprom@55 {
 		compatible = "st,24c128", "atmel,at24";
-		reg = <0x51>;
+		reg = <0x55>;
 		size = <DT_SIZE_K(16)>;
 		pagesize = <64>;
 		address-width = <16>;
