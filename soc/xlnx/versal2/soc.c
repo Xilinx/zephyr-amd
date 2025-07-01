@@ -8,7 +8,7 @@
 #include <zephyr/device.h>
 #include <zephyr/kernel.h>
 
-void z_arm_platform_init(void)
+void soc_early_init_hook(void)
 {
 	if (IS_ENABLED(CONFIG_ICACHE)) {
 		if (!(__get_SCTLR() & SCTLR_I_Msk)) {
