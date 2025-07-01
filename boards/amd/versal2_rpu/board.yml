@@ -2,4 +2,4 @@ board:
   name: versal2_rpu
   vendor: amd
   socs:
-  - name: versal2_rpu
+  - name: amd_versal2_rpu
