@@ -1,4 +1,4 @@
 family:
 - name: amd_versalnet
   socs:
-  - name: versalnet_rpu
+  - name: amd_versalnet_rpu

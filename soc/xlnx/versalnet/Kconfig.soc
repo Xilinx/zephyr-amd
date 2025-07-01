@@ -17,4 +17,4 @@ config SOC_FAMILY
 	default "amd_versalnet" if SOC_AMD_VERSALNET
 
 config SOC
-	default "versalnet_rpu" if SOC_AMD_VERSALNET_RPU
+	default "amd_versalnet_rpu" if SOC_AMD_VERSALNET_RPU
