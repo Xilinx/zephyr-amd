@@ -19,3 +19,4 @@ string
 	default "nrf54l15pdk/nrf54l15/cpuflpr" if $(BOARD) = "nrf54l15pdk"
 	default "stm32h747i_disco/stm32h747xx/m4" if $(BOARD) = "stm32h747i_disco"
 	default "versalnet_rpu" if $(BOARD) = "versalnet_rpu"
+	default "versal2_rpu" if $(BOARD) = "versal2_rpu"

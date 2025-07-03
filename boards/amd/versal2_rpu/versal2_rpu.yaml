@@ -9,6 +9,7 @@ supported:
   - ufs
   - sdhc
   - watchdog
+  - mbox
 testing:
   ignore_tags:
     - net
