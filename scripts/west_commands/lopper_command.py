@@ -2,151 +2,375 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-import subprocess
-import sys
-import lopper
+"""
+Lopper command for Zephyr west build system.
+This module provides functionality to generate device tree files and configurations
+for various processors using the lopper tool.
+"""
+
+import logging
 import os
 import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional, Union, Any
 import yaml
+
+import lopper
 from west.commands import WestCommand
 
-def fetch_yaml_data(config_file: str, dir_type: str):
+class ColoredFormatter(logging.Formatter):
     """
-    Reads the data from a yaml configuration file, raises assertion if file
-    doesn't exist.
+    Custom logging formatter with color coding for different log levels.
+
+    Features:
+    - Color-coded log levels (DEBUG=cyan, INFO=green, WARNING=yellow, ERROR=red, CRITICAL=magenta)
+    - Automatic color detection based on terminal capabilities
+    - Environment variable control:
+        * NO_COLOR=1 or LOPPER_NO_COLOR=1 - disable colors
+        * FORCE_COLOR=1 or LOPPER_FORCE_COLOR=1 - force colors
+    """
+
+    # ANSI color codes
+    COLORS = {
+        'DEBUG': '\033[36m',     # Cyan
+        'INFO': '\033[32m',      # Green
+        'WARNING': '\033[33m',   # Yellow
+        'ERROR': '\033[31m',     # Red
+        'CRITICAL': '\033[35m',  # Magenta
+        'RESET': '\033[0m'       # Reset color
+    }
+
+    def __init__(self, use_colors=None):
+        super().__init__()
+        # Auto-detect if colors should be used
+        if use_colors is None:
+            # Check environment variables first
+            no_color = os.getenv('NO_COLOR') or os.getenv('LOPPER_NO_COLOR')
+            force_color = os.getenv('FORCE_COLOR') or os.getenv('LOPPER_FORCE_COLOR')
+
+            if no_color:
+                self.use_colors = False
+            elif force_color:
+                self.use_colors = True
+            else:
+                # Auto-detect: use colors if stdout is a terminal
+                self.use_colors = hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()
+        else:
+            self.use_colors = use_colors
+
+    def format(self, record):
+        if self.use_colors:
+            # Get the color for this log level
+            color = self.COLORS.get(record.levelname, self.COLORS['RESET'])
+            reset = self.COLORS['RESET']
+
+            # Create the formatted message with color
+            log_prefix = f"{color}{record.levelname}{reset}"
+        else:
+            # No colors, just use the level name
+            log_prefix = record.levelname
+
+        # Format the record
+        formatter = logging.Formatter(f'{log_prefix}: %(message)s')
+        return formatter.format(record)
+
+
+def setup_colored_logging():
+    """Set up colored logging for the application."""
+    # Create logger
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+
+    # Remove any existing handlers
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+
+    # Create console handler with colored formatter
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+
+    # Set the colored formatter
+    colored_formatter = ColoredFormatter()
+    console_handler.setFormatter(colored_formatter)
+
+    # Add handler to logger
+    logger.addHandler(console_handler)
+
+    return logger
+
+
+# Configure colored logging
+logger = setup_colored_logging()
+
+def fetch_yaml_data(config_file: Union[str, Path], dir_type: str) -> Dict[str, Any]:
+    """
+    Reads data from a YAML configuration file.
 
     Args:
-        | config_file: The yaml configuration file path
-        | dir_type: Being used for raising a meaningful assertion.
+        config_file: Path to the YAML configuration file
+        dir_type: Description used in error messages for context
+
     Returns:
-        data: The read data from yaml file
-    """
-    assert os.path.isfile(config_file), f"Could not find valid {dir_type} at {get_dir_path(config_file)}"
-    print("config file", config_file)
-    with open(config_file) as f:
-        data = yaml.safe_load(f)
-    return data
+        Dict containing the parsed YAML data
 
-def get_dir_path(fpath):
+    Raises:
+        FileNotFoundError: If the configuration file doesn't exist
+        yaml.YAMLError: If the YAML file is malformed
     """
-    This api takes file path and returns it's directory path
+    config_path = Path(config_file)
+    if not config_path.is_file():
+        raise FileNotFoundError(
+            f"Could not find valid {dir_type} at {config_path.parent}"
+        )
+
+    logger.info(f"Loading configuration file: {config_path}")
+
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            data = yaml.safe_load(f)
+        return data
+    except yaml.YAMLError as e:
+        logger.error(f"Failed to parse YAML file {config_path}: {e}")
+        raise
+
+def runcmd(cmd: str, cwd: Optional[Union[str, Path]] = None,
+           logfile: Optional[Union[str, Path]] = None) -> bool:
+    """
+    Execute shell commands with proper error handling.
 
     Args:
-        fpath: Path to get the directory path from.
+        cmd: Shell command to execute
+        cwd: Working directory for the command
+        logfile: File path to save command output (optional)
+
     Returns:
-        string: Full Directory path of the passed path
-    """
-    return os.path.dirname(fpath.rstrip(os.path.sep))
+        bool: True if command succeeded, False otherwise
 
-def runcmd(cmd, cwd=None, logfile=None) -> bool:
+    Raises:
+        SystemExit: If command fails and no logfile is specified
     """
-    Run the shell commands.
+    logger.info(f"Executing command: {cmd}")
+    if cwd:
+        logger.info(f"Working directory: {cwd}")
 
-    Args:
-        | cmd: shell command that needs to be called
-        | logfile: file to save the command output if required
-    """
-    ret = True
-    if logfile is None:
-        try:
+    try:
+        if logfile is None:
             subprocess.check_call(cmd, cwd=cwd, shell=True)
-        except subprocess.CalledProcessError as exc:
-            ret = False
+        else:
+            with open(logfile, 'w', encoding='utf-8') as log:
+                subprocess.check_call(
+                    cmd, cwd=cwd, shell=True, stdout=log, stderr=log
+                )
+        logger.info("Command executed successfully")
+        return True
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Command failed with return code {e.returncode}: {cmd}")
+        if logfile is None:
             sys.exit(1)
-    else:
-        try:
-            subprocess.check_call(cmd, cwd=cwd, shell=True, stdout=logfile, stderr=logfile)
-        except subprocess.CalledProcessError:
-            ret = False
-    return ret
+        return False
 
 class LopperCommand(WestCommand):
+    """West command for running lopper to generate device tree files and configurations."""
+
     def __init__(self):
         super().__init__(
-            'lopper-command',  # The name of the command
-            'Install lopper dependencies and run lopper commands',  # Help text for the command
-            'This command runs lopper commands based on user inputs.'
+            'lopper-command',
+            'Install lopper dependencies and run lopper commands',
+            'This command runs lopper commands based on user inputs to generate '
+            'device tree files and configurations for various processors.'
         )
 
     def do_add_parser(self, parser_adder):
+        """Add command-line argument parser."""
         parser = parser_adder.add_parser(self.name, help=self.help)
-        required_argument = parser.add_argument_group("Required arguments")
-        required_argument.add_argument(
-            "-p",
-            "--proc",
-            action="store",
-            help="Specify the processor name",
+
+        required_args = parser.add_argument_group("Required arguments")
+        required_args.add_argument(
+            "-p", "--proc",
             required=True,
+            help="Specify the processor name"
         )
-        required_argument.add_argument(
-            "-s",
-            "--sdt",
-            action="store",
-            help="Specify the System device-tree path (till system-top.dts file)",
+        required_args.add_argument(
+            "-s", "--sdt",
             required=True,
+            help="Specify the System device-tree path (till system-top.dts file)"
         )
+
         parser.add_argument(
-            "-w",
-            "--ws_dir",
-            action="store",
-            help="Workspace directory (zephyr repository path) where domain will be created (Default: zephyr directory in Current Work Directory)",
+            "-w", "--ws_dir",
             default='./zephyr/',
+            help="Workspace directory (zephyr repository path) where domain will be created "
+                 "(Default: zephyr directory in Current Work Directory)"
         )
 
         return parser
 
-    def do_run(self, args, unknown_args):
-        sdt = os.path.abspath(args.sdt)
-        proc = args.proc
-        workspace = os.path.abspath(args.ws_dir)
-        workspace = os.path.join(os.path.abspath(args.ws_dir), "lopper_metadata")
-        if not os.path.exists(workspace):
-            os.makedirs(workspace)
+    def _setup_workspace(self, ws_dir: str) -> Path:
+        """
+        Set up the workspace directory for lopper operations.
 
-        lops_dir = os.path.join(get_dir_path(lopper.__file__), "lops")
+        Args:
+            ws_dir: Base workspace directory
+
+        Returns:
+            Path to the lopper metadata directory
+        """
+        workspace = Path(ws_dir).resolve() / "lopper_metadata"
+        workspace.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Workspace directory: {workspace}")
+        return workspace
+
+    def _validate_processor(self, proc: str, workspace: Path, sdt: Path) -> str:
+        """
+        Validate the processor name against available processors in the SDT.
+
+        Args:
+            proc: Processor name to validate
+            workspace: Workspace directory
+            sdt: System device tree path
+
+        Returns:
+            Processor IP name
+
+        Raises:
+            SystemExit: If processor is not valid
+        """
+        # Generate CPU list
         runcmd(f"lopper --werror -f -O {workspace} -i lop-cpulist.dts {sdt}", cwd=workspace)
-        cpu_list_file = os.path.join(workspace, "cpulist.yaml")
+
+        cpu_list_file = workspace / "cpulist.yaml"
         avail_cpu_data = fetch_yaml_data(cpu_list_file, "cpulist")
-        if proc not in avail_cpu_data.keys():
-            print(
-                    f"ERROR: Please pass a valid processor name. Valid Processor Names for the given SDT are: {list(avail_cpu_data.keys())}"
+
+        if proc not in avail_cpu_data:
+            available_procs = list(avail_cpu_data.keys())
+            logger.error(
+                f"Invalid processor name '{proc}'. "
+                f"Valid processors for the given SDT: {available_procs}"
             )
             sys.exit(1)
-        proc_ip_name = avail_cpu_data[proc]
-        if "microblaze_riscv" in proc_ip_name:
-            generated_dts_file = os.path.join(workspace, "mbv32.dts")
-            workspace_dts_file = os.path.join(os.path.abspath(args.ws_dir), "boards", "amd", "mbv32", "mbv32.dts")
-            workspace_kconfig_defconfig = os.path.join(os.path.abspath(args.ws_dir), "soc", "xlnx", "mbv32", "Kconfig.defconfig")
-            generated_kconfig_defconfig = os.path.join(workspace, "Kconfig.defconfig")
-            workspace_kconfig_soc = os.path.join(os.path.abspath(args.ws_dir), "soc", "xlnx", "mbv32", "Kconfig")
-            generated_kconfig_soc = os.path.join(workspace, "Kconfig")
 
-            lops_file = os.path.join(lops_dir, "lop-microblaze-riscv.dts")
-            lops_file_intc = os.path.join(lops_dir, "lop-mbv-zephyr-intc.dts")
-            runcmd(f"lopper -f --enhanced -O {workspace} -i {lops_file} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
-                    cwd = workspace)
-            runcmd(f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-zephyr.dts -- gen_domain_dts {proc} zephyr_dt",
-                    cwd = workspace)
-            runcmd(f"lopper -f --enhanced -O {workspace} -i {lops_file_intc}  {workspace}/system-zephyr.dts  {workspace}/mbv32.dts",
-                    cwd = workspace)
+        return avail_cpu_data[proc]
 
-            shutil.copy(generated_dts_file, workspace_dts_file)
-            shutil.copy(generated_kconfig_defconfig, workspace_kconfig_defconfig)
-            shutil.copy(generated_kconfig_soc, workspace_kconfig_soc)
-            shutil.rmtree(workspace)
-        elif "cortexr52" in proc:
-            lops_file = os.path.join(lops_dir, "lop-r52-imux.dts")
-            if "psx_cortexr52" in proc:
-                generated_dts_file = os.path.join(workspace, "versalnet_rpu.dts")
-                workspace_dts_file = os.path.join(os.path.abspath(args.ws_dir), "boards", "amd", "versalnet_rpu", "versalnet_rpu.dts")
+    def _process_microblaze_riscv(self, workspace: Path, ws_dir: str, sdt: Path,
+                                  proc: str, lops_dir: Path) -> None:
+        """Process MicroBlaze RISC-V processor."""
+        logger.info("Processing MicroBlaze RISC-V processor")
+
+        # Define file paths
+        paths = {
+            'generated_dts': workspace / "mbv32.dts",
+            'workspace_dts': Path(ws_dir) / "boards" / "amd" / "mbv32" / "mbv32.dts",
+            'workspace_kconfig_defconfig': Path(ws_dir) / "soc" / "xlnx" / "mbv32" / "Kconfig.defconfig",
+            'generated_kconfig_defconfig': workspace / "Kconfig.defconfig",
+            'workspace_kconfig_soc': Path(ws_dir) / "soc" / "xlnx" / "mbv32" / "Kconfig",
+            'generated_kconfig_soc': workspace / "Kconfig"
+        }
+
+        lops_file = lops_dir / "lop-microblaze-riscv.dts"
+        lops_file_intc = lops_dir / "lop-mbv-zephyr-intc.dts"
+
+        # Run lopper commands
+        commands = [
+            f"lopper -f --enhanced -O {workspace} -i {lops_file} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
+            f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-zephyr.dts -- gen_domain_dts {proc} zephyr_dt",
+            f"lopper -f --enhanced -O {workspace} -i {lops_file_intc} {workspace}/system-zephyr.dts {workspace}/mbv32.dts"
+        ]
+
+        for cmd in commands:
+            runcmd(cmd, cwd=workspace)
+
+        # Copy generated files to workspace
+        self._copy_files([
+            (paths['generated_dts'], paths['workspace_dts']),
+            (paths['generated_kconfig_defconfig'], paths['workspace_kconfig_defconfig']),
+            (paths['generated_kconfig_soc'], paths['workspace_kconfig_soc'])
+        ])
+
+    def _process_cortexr52(self, workspace: Path, ws_dir: str, sdt: Path,
+                          proc: str, lops_dir: Path) -> None:
+        """Process Cortex-R52 processor."""
+        logger.info("Processing Cortex-R52 processor")
+
+        lops_file = lops_dir / "lop-r52-imux.dts"
+
+        if "psx_cortexr52" in proc:
+            workspace_dts = Path(ws_dir) / "boards" / "amd" / "versalnet_rpu" / "versalnet_rpu.dts"
+        else:
+            workspace_dts = Path(ws_dir) / "boards" / "amd" / "versal2_rpu" / "versal2_rpu.dts"
+
+        # Run lopper commands
+        commands = [
+            f"lopper -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
+            f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
+            f"lopper -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt"
+        ]
+
+        for cmd in commands:
+            runcmd(cmd, cwd=workspace)
+
+    def _copy_files(self, file_pairs: List[tuple]) -> None:
+        """
+        Copy files from source to destination.
+
+        Args:
+            file_pairs: List of (source, destination) tuples
+        """
+        for src, dst in file_pairs:
+            try:
+                # Ensure destination directory exists
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+                logger.info(f"Copied {src} -> {dst}")
+            except Exception as e:
+                logger.error(f"Failed to copy {src} to {dst}: {e}")
+                raise
+
+    def do_run(self, args, unknown_args) -> None:
+        """Main execution method for the lopper command."""
+        try:
+            logger.info("Starting lopper command execution")
+
+            # Validate and prepare paths
+            sdt = Path(args.sdt).resolve()
+            if not sdt.exists():
+                logger.error(f"System device tree file not found: {sdt}")
+                sys.exit(1)
+
+            proc = args.proc
+            ws_dir = Path(args.ws_dir).resolve()
+
+            # Set up workspace
+            workspace = self._setup_workspace(str(ws_dir))
+
+            # Get lopper operations directory
+            lops_dir = Path(lopper.__file__).parent / "lops"
+            if not lops_dir.exists():
+                logger.error(f"Lopper operations directory not found: {lops_dir}")
+                sys.exit(1)
+
+            # Validate processor and get IP name
+            logger.info(f"Validating processor: {proc}")
+            proc_ip_name = self._validate_processor(proc, workspace, sdt)
+            logger.info(f"Processor IP name identified: {proc_ip_name}")
+
+            # Process based on processor type
+            if "microblaze_riscv" in proc_ip_name:
+                self._process_microblaze_riscv(workspace, str(ws_dir), sdt, proc, lops_dir)
+                # Clean up workspace after successful processing
+                shutil.rmtree(workspace)
+                logger.info("MicroBlaze RISC-V processing completed successfully")
+            elif "cortexr52" in proc_ip_name:
+                self._process_cortexr52(workspace, str(ws_dir), sdt, proc, lops_dir)
+                logger.info("Cortex-R52 processing completed successfully")
             else:
-                generated_dts_file = os.path.join(workspace, "versal2_rpu.dts")
-                workspace_dts_file = os.path.join(os.path.abspath(args.ws_dir), "boards", "amd", "versal2_rpu", "versal2_rpu.dts")
+                logger.error(f"Unsupported processor type: {proc_ip_name}")
+                sys.exit(1)
 
-            runcmd(f"lopper -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
-                    cwd = workspace)
-            runcmd(f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
-                    cwd = workspace)
-            runcmd(f"lopper -f --enhanced -O {workspace} {workspace}/system-imux.dts  {workspace_dts_file} -- gen_domain_dts {proc} zephyr_dt",
-                    cwd = workspace)
+            logger.info("Lopper command execution completed successfully")
+
+        except Exception as e:
+            logger.error(f"Command execution failed: {e}")
+            sys.exit(1)
 
