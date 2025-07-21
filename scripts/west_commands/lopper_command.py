@@ -310,6 +310,28 @@ class LopperCommand(WestCommand):
         for cmd in commands:
             runcmd(cmd, cwd=workspace)
 
+    def _process_cortexa78(self, workspace: Path, ws_dir: str, sdt: Path,
+                          proc: str, lops_dir: Path) -> None:
+        """Process Cortex-A78 processor."""
+        logger.info("Processing Cortex-A78 processor")
+
+        lops_file = lops_dir / "lop-a78-imux.dts"
+
+        if "psx_cortexa78" in proc:
+            workspace_dts = Path(ws_dir) / "boards" / "amd" / "versalnet_apu" / "versalnet_apu.dts"
+        else:
+            workspace_dts = Path(ws_dir) / "boards" / "amd" / "versal2_apu" / "versal2_apu.dts"
+
+        # Run lopper commands
+        commands = [
+            f"lopper -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
+            f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
+            f"lopper -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt"
+        ]
+
+        for cmd in commands:
+            runcmd(cmd, cwd=workspace)
+
     def _copy_files(self, file_pairs: List[tuple]) -> None:
         """
         Copy files from source to destination.
@@ -364,6 +386,11 @@ class LopperCommand(WestCommand):
             elif "cortexr52" in proc_ip_name:
                 self._process_cortexr52(workspace, str(ws_dir), sdt, proc, lops_dir)
                 logger.info("Cortex-R52 processing completed successfully")
+            elif "cortexa78" in proc_ip_name:
+                self._process_cortexa78(workspace, str(ws_dir), sdt, proc, lops_dir)
+                # Clean up workspace after successful processing
+                shutil.rmtree(workspace)
+                logger.info("Cortex-A78 processing completed successfully")
             else:
                 logger.error(f"Unsupported processor type: {proc_ip_name}")
                 sys.exit(1)
