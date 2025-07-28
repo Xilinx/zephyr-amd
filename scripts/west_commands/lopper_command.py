@@ -199,6 +199,10 @@ class LopperCommand(WestCommand):
         )
 
         parser.add_argument(
+            "-b", "--board_dts",
+            help="Specify the board dts file path to pick (till *.dts file)"
+        )
+        parser.add_argument(
             "-w", "--ws_dir",
             default='./zephyr/',
             help="Workspace directory (zephyr repository path) where domain will be created "
@@ -254,7 +258,8 @@ class LopperCommand(WestCommand):
         return avail_cpu_data[proc]
 
     def _process_microblaze_riscv(self, workspace: Path, ws_dir: str, sdt: Path,
-                                  proc: str, lops_dir: Path) -> None:
+                                  proc: str, lops_dir: Path,
+                                  zephyr_board_dts: Optional[Path]) -> None:
         """Process MicroBlaze RISC-V processor."""
         logger.info("Processing MicroBlaze RISC-V processor")
 
@@ -265,7 +270,9 @@ class LopperCommand(WestCommand):
             'workspace_kconfig_defconfig': Path(ws_dir) / "soc" / "xlnx" / "mbv32" / "Kconfig.defconfig",
             'generated_kconfig_defconfig': workspace / "Kconfig.defconfig",
             'workspace_kconfig_soc': Path(ws_dir) / "soc" / "xlnx" / "mbv32" / "Kconfig",
-            'generated_kconfig_soc': workspace / "Kconfig"
+            'generated_kconfig_soc': workspace / "Kconfig",
+            'generated_board_dt': workspace / "board.overlay",
+            'workspace_board_overlay': Path(ws_dir) / "boards" / "amd" / "mbv32" / "mbv32.overlay"
         }
 
         lops_file = lops_dir / "lop-microblaze-riscv.dts"
@@ -274,7 +281,7 @@ class LopperCommand(WestCommand):
         # Run lopper commands
         commands = [
             f"lopper -f --enhanced -O {workspace} -i {lops_file} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
-            f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-zephyr.dts -- gen_domain_dts {proc} zephyr_dt",
+            f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-zephyr.dts -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}",
             f"lopper -f --enhanced -O {workspace} -i {lops_file_intc} {workspace}/system-zephyr.dts {workspace}/mbv32.dts"
         ]
 
@@ -288,8 +295,12 @@ class LopperCommand(WestCommand):
             (paths['generated_kconfig_soc'], paths['workspace_kconfig_soc'])
         ])
 
+        if zephyr_board_dts:
+            self._copy_files([(paths['generated_board_dt'], paths['workspace_board_overlay'])])
+
     def _process_cortexr52(self, workspace: Path, ws_dir: str, sdt: Path,
-                          proc: str, lops_dir: Path) -> None:
+                          proc: str, lops_dir: Path,
+                          zephyr_board_dts: Optional[Path]) -> None:
         """Process Cortex-R52 processor."""
         logger.info("Processing Cortex-R52 processor")
 
@@ -297,21 +308,27 @@ class LopperCommand(WestCommand):
 
         if "psx_cortexr52" in proc:
             workspace_dts = Path(ws_dir) / "boards" / "amd" / "versalnet_rpu" / "versalnet_rpu.dts"
+            workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versalnet_rpu" / "versalnet_rpu.overlay"
         else:
             workspace_dts = Path(ws_dir) / "boards" / "amd" / "versal2_rpu" / "versal2_rpu.dts"
+            workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versalnet_rpu" / "versalnet_rpu.overlay"
 
         # Run lopper commands
         commands = [
             f"lopper -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
             f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
-            f"lopper -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt"
+            f"lopper -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}"
         ]
 
         for cmd in commands:
             runcmd(cmd, cwd=workspace)
 
+        if zephyr_board_dts:
+            self._copy_files([((os.path.join(workspace, "board.overlay")), workspace_overlay)])
+
     def _process_cortexa78(self, workspace: Path, ws_dir: str, sdt: Path,
-                          proc: str, lops_dir: Path) -> None:
+                          proc: str, lops_dir: Path,
+                          zephyr_board_dts: Optional[Path]) -> None:
         """Process Cortex-A78 processor."""
         logger.info("Processing Cortex-A78 processor")
 
@@ -319,18 +336,23 @@ class LopperCommand(WestCommand):
 
         if "psx_cortexa78" in proc:
             workspace_dts = Path(ws_dir) / "boards" / "amd" / "versalnet_apu" / "versalnet_apu.dts"
+            workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versalnet_apu" / "versalnet_apu.overlay"
         else:
             workspace_dts = Path(ws_dir) / "boards" / "amd" / "versal2_apu" / "versal2_apu.dts"
+            workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versal2_apu" / "versal2_apu.overlay"
 
         # Run lopper commands
         commands = [
             f"lopper -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
             f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
-            f"lopper -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt"
+            f"lopper -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}"
         ]
 
         for cmd in commands:
             runcmd(cmd, cwd=workspace)
+
+        if zephyr_board_dts:
+            self._copy_files([((os.path.join(workspace, "board.overlay")), workspace_overlay)])
 
     def _copy_files(self, file_pairs: List[tuple]) -> None:
         """
@@ -366,6 +388,16 @@ class LopperCommand(WestCommand):
             # Set up workspace
             workspace = self._setup_workspace(str(ws_dir))
 
+            # Find board overlay if board is specified
+            zephyr_board_dts = None
+            if args.board_dts:
+                zephyr_board_dts = Path(args.board_dts).resolve()
+                if not zephyr_board_dts.exists():
+                    logger.error(f" board dts file not found: {zephyr_board_dts}")
+                    sys.exit(1)
+            else:
+                logger.warn("board dts not specified, proceeding without board overlay")
+
             # Get lopper operations directory
             lops_dir = Path(lopper.__file__).parent / "lops"
             if not lops_dir.exists():
@@ -379,15 +411,17 @@ class LopperCommand(WestCommand):
 
             # Process based on processor type
             if "microblaze_riscv" in proc_ip_name:
-                self._process_microblaze_riscv(workspace, str(ws_dir), sdt, proc, lops_dir)
+                self._process_microblaze_riscv(workspace, str(ws_dir), sdt, proc, lops_dir, zephyr_board_dts)
                 # Clean up workspace after successful processing
                 shutil.rmtree(workspace)
                 logger.info("MicroBlaze RISC-V processing completed successfully")
             elif "cortexr52" in proc_ip_name:
-                self._process_cortexr52(workspace, str(ws_dir), sdt, proc, lops_dir)
+                self._process_cortexr52(workspace, str(ws_dir), sdt, proc, lops_dir, zephyr_board_dts)
+                # Clean up workspace after successful processing
+                shutil.rmtree(workspace)
                 logger.info("Cortex-R52 processing completed successfully")
             elif "cortexa78" in proc_ip_name:
-                self._process_cortexa78(workspace, str(ws_dir), sdt, proc, lops_dir)
+                self._process_cortexa78(workspace, str(ws_dir), sdt, proc, lops_dir, zephyr_board_dts)
                 # Clean up workspace after successful processing
                 shutil.rmtree(workspace)
                 logger.info("Cortex-A78 processing completed successfully")
