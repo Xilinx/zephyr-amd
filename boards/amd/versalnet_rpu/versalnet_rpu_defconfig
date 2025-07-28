@@ -7,3 +7,7 @@ CONFIG_UART_CONSOLE=y
 
 # Enable serial port
 CONFIG_UART_PL011=y
+
+# Enable I2C, EEPROM
+CONFIG_I2C=y
+CONFIG_EEPROM=y
