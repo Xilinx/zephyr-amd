@@ -33,6 +33,20 @@
 			enable-method = "psci";
 			reg = <0x100>;
 		};
+
+		cpu200: cpu@200 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a78";
+			enable-method = "psci";
+			reg = <0x200>;
+		};
+
+		cpu300: cpu@300 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a78";
+			enable-method = "psci";
+			reg = <0x300>;
+		};
 	};
 
 	psci {
