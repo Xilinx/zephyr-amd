@@ -44,7 +44,11 @@
  * For the platforms that use the ARM GIC, use the SGI (software generated
  * interrupt) lines 14 and 15 for testing.
  */
+#if defined(CONFIG_SOC_AMD_VERSAL2_APU) || defined(CONFIG_SOC_AMD_VERSALNET_APU)
+#define IRQ0_LINE	13
+#else
 #define IRQ0_LINE	14
+#endif
 #define IRQ1_LINE	15
 
 /*
