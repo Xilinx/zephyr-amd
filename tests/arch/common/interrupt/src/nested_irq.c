@@ -50,7 +50,11 @@
  * SGI 0-2 are used by Zephyr for SMP IPIs.
  * SGI 8-15 are unaccessible from Non-Secure state.
  */
+#if defined(CONFIG_SOC_AMD_VERSAL2_APU) || defined(CONFIG_SOC_AMD_VERSALNET_APU)
+#define IRQ0_LINE	13
+#else
 #define IRQ0_LINE	6
+#endif
 #define IRQ1_LINE	7
 
 /*
