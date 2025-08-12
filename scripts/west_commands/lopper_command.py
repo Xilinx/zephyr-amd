@@ -311,7 +311,7 @@ class LopperCommand(WestCommand):
             workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versalnet_rpu" / "versalnet_rpu.overlay"
         else:
             workspace_dts = Path(ws_dir) / "boards" / "amd" / "versal2_rpu" / "versal2_rpu.dts"
-            workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versalnet_rpu" / "versalnet_rpu.overlay"
+            workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versal2_rpu" / "versal2_rpu.overlay"
 
         # Run lopper commands
         commands = [
