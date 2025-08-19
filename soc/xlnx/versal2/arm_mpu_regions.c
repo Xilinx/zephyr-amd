@@ -11,6 +11,13 @@
 #define DEVICE_REGION_START	0xE2000000U
 #define DEVICE_REGION_END	0xF8000000U
 
+#if DT_HAS_CHOSEN(zephyr_ipc_shm)
+/* Constants derived from device tree */
+#define SHM_NODE		DT_CHOSEN(zephyr_ipc_shm)
+#define SHARED_MEM_START	DT_REG_ADDR(SHM_NODE)
+#define SHARED_MEM_END		(SHARED_MEM_START + DT_REG_SIZE(SHM_NODE))
+#endif /* DT_HAS_CHOSEN(zephyr_ipc_shm) */
+
 static const struct arm_mpu_region mpu_regions[] = {
 	MPU_REGION_ENTRY("vector",
 			 (uintptr_t)_vector_start,
@@ -31,6 +38,11 @@ static const struct arm_mpu_region mpu_regions[] = {
 	MPU_REGION_ENTRY("DEVICE",
 			 DEVICE_REGION_START,
 			 REGION_DEVICE_ATTR(DEVICE_REGION_END)),
+#if DT_HAS_CHOSEN(zephyr_ipc_shm)
+	MPU_REGION_ENTRY("SHARED_MEM",
+			 (uintptr_t)SHARED_MEM_START,
+			 REGION_RAM_ATTR(SHARED_MEM_END)),
+#endif /* DT_HAS_CHOSEN(zephyr_ipc_shm) */
 };
 
 const struct arm_mpu_config mpu_config = {
