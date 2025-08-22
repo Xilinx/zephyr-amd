@@ -62,6 +62,11 @@
 		compatible = "mmio-sram";
 		reg = <0x30000 0x7ffd0000>;
 	};
+
+	tcm: memory@0 {
+		compatible = "mmio-sram";
+		reg = <0x0 0x10000>;
+	};
 };
 
 &ocm {
