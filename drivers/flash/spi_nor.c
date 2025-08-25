@@ -156,6 +156,10 @@ struct spi_nor_config {
 	bool hold_gpios_exist:1;
 	bool has_flsr: 1;
 	bool use_fast_read: 1;
+
+	/* SPI bus width for TX and RX operations */
+	uint8_t spi_tx_bus_width;
+	uint8_t spi_rx_bus_width;
 };
 
 /**
@@ -387,31 +391,39 @@ static int spi_nor_access(const struct device *const dev,
 			  uint8_t opcode, unsigned int access,
 			  off_t addr, void *data, size_t length)
 {
-	const struct spi_nor_config *const driver_cfg = dev->config;
+	const struct spi_nor_config *cfg = dev->config;
 	struct spi_nor_data *const driver_data = dev->data;
 	bool is_addressed = (access & NOR_ACCESS_ADDRESSED) != 0U;
 	bool is_write = (access & NOR_ACCESS_WRITE) != 0U;
 	bool has_dummy = (access & NOR_ACCESS_DUMMY_BYTE) != 0U;
-	uint8_t buf[6] = {opcode};
-	struct spi_buf spi_buf_tx[2] = {
-		{
-			.buf = buf,
-			.len = 1,
-		},
-		{
-			.buf = data,
-			.len = length
-		}
+	uint8_t buf[6] = { 0 };
+
+	struct spi_buf spi_buf_tx[2];
+	struct spi_buf spi_buf_rx[3];
+
+	buf[0] = opcode;
+	spi_buf_tx[0] = (struct spi_buf){
+		.buf = buf,
+		.len = 1,
+		.bus_width = BUS_WIDTH_SPI,
 	};
-	struct spi_buf spi_buf_rx[2] = {
-		{
-			.buf = NULL,
-			.len = 1,
-		},
-		{
-			.buf = data,
-			.len = length
-		}
+
+	spi_buf_tx[1] = (struct spi_buf){
+		.buf = is_write ? data : NULL,
+		.len = is_write ? length : 0,
+		.bus_width = BUS_WIDTH_SPI,
+	};
+
+	spi_buf_rx[0] = (struct spi_buf){
+		.buf = NULL,
+		.len = 0,
+		.bus_width = BUS_WIDTH_SPI,
+	};
+
+	spi_buf_rx[1] = (struct spi_buf){
+		.buf = data,
+		.len = length,
+		.bus_width = BUS_WIDTH_SPI,
 	};
 
 	if (is_addressed) {
@@ -447,16 +459,39 @@ static int spi_nor_access(const struct device *const dev,
 		.count = (is_write && length != 0) ? 2 : 1,
 	};
 
-	const struct spi_buf_set rx_set = {
+	struct spi_buf_set rx_set = {
 		.buffers = spi_buf_rx,
 		.count = 2,
 	};
 
-	if (is_write) {
-		return spi_write_dt(&driver_cfg->spi, &tx_set);
+	if (is_addressed && length) {
+		if ((cfg->spi_tx_bus_width & SPI_MODE_MASK) && is_write) {
+			spi_buf_tx[1] = (struct spi_buf){
+				.buf = data,
+				.len = length,
+				.bus_width = cfg->spi_tx_bus_width,
+			};
+		}
+		if (cfg->spi_rx_bus_width & SPI_MODE_MASK) {
+			spi_buf_rx[1] = (struct spi_buf){
+				.buf = NULL,
+				.len = 8,
+				.bus_width = cfg->spi_rx_bus_width,
+			};
+			spi_buf_rx[2] = (struct spi_buf){
+				.buf = data,
+				.len = length,
+				.bus_width = cfg->spi_rx_bus_width,
+			};
+			rx_set.count += 1;
+		}
 	}
 
-	return spi_transceive_dt(&driver_cfg->spi, &tx_set, &rx_set);
+	if (is_write) {
+		return spi_write_dt(&cfg->spi, &tx_set);
+	}
+
+	return spi_transceive_dt(&cfg->spi, &tx_set, &rx_set);
 }
 
 #define spi_nor_cmd_read(dev, opcode, dest, length) \
@@ -901,7 +936,11 @@ static int spi_nor_read(const struct device *dev, off_t addr, void *dest,
 			ret = spi_nor_cmd_addr_fast_read(dev, SPI_NOR_CMD_READ_FAST, addr, dest,
 							 size);
 		} else {
-			ret = spi_nor_cmd_addr_read(dev, SPI_NOR_CMD_READ, addr, dest, size);
+			if (cfg->spi_rx_bus_width == BUS_WIDTH_QUAD) {
+				ret = spi_nor_cmd_addr_read(dev, SPI_NOR_CMD_QREAD, addr, dest, size);
+			} else {
+				ret = spi_nor_cmd_addr_read(dev, SPI_NOR_CMD_READ, addr, dest, size);
+			}
 		}
 	}
 
@@ -949,6 +988,7 @@ static int spi_nor_write(const struct device *dev, off_t addr,
 			 const void *src,
 			 size_t size)
 {
+	const struct spi_nor_config *cfg = dev->config;
 	const size_t flash_size = dev_flash_size(dev);
 	const uint16_t page_size = dev_page_size(dev);
 	int ret;
@@ -996,8 +1036,13 @@ static int spi_nor_write(const struct device *dev, off_t addr,
 									src, to_write);
 				}
 			} else {
-				ret = spi_nor_cmd_addr_write(dev, SPI_NOR_CMD_PP, addr, src,
-							     to_write);
+				if (cfg->spi_tx_bus_width == BUS_WIDTH_QUAD) {
+					ret = spi_nor_cmd_addr_write(dev, SPI_NOR_CMD_PP_1_1_4, addr,
+							src, to_write);
+				} else {
+					ret = spi_nor_cmd_addr_write(dev, SPI_NOR_CMD_PP, addr,
+							src, to_write);
+				}
 			}
 
 			if (ret != 0) {
@@ -1897,6 +1942,8 @@ static DEVICE_API(flash, spi_nor_api) = {
 		.use_4b_addr_opcodes = DT_INST_PROP(idx, use_4b_addr_opcodes),			\
 		.has_flsr = DT_INST_PROP(idx, use_flag_status_register),			\
 		.use_fast_read = DT_INST_PROP(idx, use_fast_read),				\
+		.spi_tx_bus_width = DT_INST_PROP_OR(idx, spi_tx_bus_width, 1),			\
+		.spi_rx_bus_width = DT_INST_PROP_OR(idx, spi_rx_bus_width, 1),			\
 		IF_ENABLED(INST_HAS_LOCK(idx), (.has_lock = DT_INST_PROP(idx, has_lock),))	\
 		IF_ENABLED(ANY_INST_HAS_DPD, (INIT_T_ENTER_DPD(idx),))				\
 		IF_ENABLED(UTIL_AND(ANY_INST_HAS_DPD, ANY_INST_HAS_T_EXIT_DPD),			\

@@ -625,6 +625,8 @@ struct spi_buf {
 	void *buf;
 	/** Length of the buffer @a buf in bytes, or length of NOP */
 	size_t len;
+	/** Bus width for write and read transfers */
+	size_t bus_width;
 };
 
 /**
