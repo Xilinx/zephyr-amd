@@ -429,6 +429,8 @@ struct spi_buf {
 	 * buffer) or the length of bytes that should be skipped (as RX buffer).
 	 */
 	size_t len;
+	/** Bus width for write and read transfers */
+	size_t bus_width;
 };
 
 /**

@@ -102,3 +102,15 @@ properties:
       low power mode.
 
       Only supported on Macronix MX25R Ultra Low Power series.
+
+  spi-rx-bus-width:
+    type: int
+    description:
+      Bus width to the SPI bus used for read transfers.
+    enum: [1, 2, 4, 8]
+
+  spi-tx-bus-width:
+    type: int
+    description:
+      Bus width to the SPI bus used for write transfers.
+    enum: [1, 2, 4, 8]

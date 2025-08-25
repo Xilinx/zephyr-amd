@@ -115,4 +115,16 @@
 
 #define CMD_RDCR 0x15 /* Read the configuration register. */
 
+/**
+ * @name Bus Width
+ * @{
+ *
+ * Bus width to the SPI bus used for read/write transfers.
+ */
+#define BUS_WIDTH_SPI     1     /**< Single line */
+#define BUS_WIDTH_DUAL    2     /**< Dual lines */
+#define BUS_WIDTH_QUAD    4     /**< Quad lines */
+#define BUS_WIDTH_OCTAL   8     /**< Octal lines */
+/** @} */
+
 #endif /*__SPI_NOR_H__*/

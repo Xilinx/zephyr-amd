@@ -159,6 +159,10 @@ struct spi_nor_config {
 	bool requires_ulbpr_exist:1;
 	bool wp_gpios_exist:1;
 	bool hold_gpios_exist:1;
+
+	/* SPI bus width for TX and RX operations */
+	uint8_t spi_tx_bus_width;
+	uint8_t spi_rx_bus_width;
 };
 
 /**
@@ -375,18 +379,43 @@ static int spi_nor_access(const struct device *const dev,
 	bool is_addressed = (access & NOR_ACCESS_ADDRESSED) != 0U;
 	bool is_write = (access & NOR_ACCESS_WRITE) != 0U;
 	uint8_t buf[5] = { 0 };
-	struct spi_buf spi_buf[2] = {
-		{
-			.buf = buf,
-			.len = 1,
-		},
-		{
-			.buf = data,
-			.len = length
-		}
+
+	struct spi_buf tx_spi_buf[2];
+	struct spi_buf rx_spi_buf[3];
+	struct spi_buf_set tx_set = {
+		.buffers = tx_spi_buf,
+		.count = (length != 0) ? 2 : 1,
+	};
+	struct spi_buf_set rx_set = {
+		.buffers = rx_spi_buf,
+		.count = 2,
 	};
 
 	buf[0] = opcode;
+	tx_spi_buf[0] = (struct spi_buf){
+		.buf = buf,
+		.len = 1,
+		.bus_width = BUS_WIDTH_SPI,
+	};
+
+	tx_spi_buf[1] = (struct spi_buf){
+		.buf = is_write ? data : NULL,
+		.len = is_write ? length : 0,
+		.bus_width = BUS_WIDTH_SPI,
+	};
+
+	rx_spi_buf[0] = (struct spi_buf){
+		.buf = NULL,
+		.len = 0,
+		.bus_width = BUS_WIDTH_SPI,
+	};
+
+	rx_spi_buf[1] = (struct spi_buf){
+		.buf = data,
+		.len = length,
+		.bus_width = BUS_WIDTH_SPI,
+	};
+
 	if (is_addressed) {
 		bool access_24bit = (access & NOR_ACCESS_24BIT_ADDR) != 0;
 		bool access_32bit = (access & NOR_ACCESS_32BIT_ADDR) != 0;
@@ -402,22 +431,35 @@ static int spi_nor_access(const struct device *const dev,
 
 		if (use_32bit) {
 			memcpy(&buf[1], &addr32.u8[0], 4);
-			spi_buf[0].len += 4;
+			tx_spi_buf[0].len += 4;
 		} else {
 			memcpy(&buf[1], &addr32.u8[1], 3);
-			spi_buf[0].len += 3;
+			tx_spi_buf[0].len += 3;
 		}
-	};
+	}
 
-	const struct spi_buf_set tx_set = {
-		.buffers = spi_buf,
-		.count = (length != 0) ? 2 : 1,
-	};
-
-	const struct spi_buf_set rx_set = {
-		.buffers = spi_buf,
-		.count = 2,
-	};
+	if (is_addressed && length) {
+		if ((driver_cfg->spi_tx_bus_width & SPI_MODE_MASK) && is_write) {
+			tx_spi_buf[1] = (struct spi_buf){
+				.buf = data,
+				.len = length,
+				.bus_width = driver_cfg->spi_tx_bus_width,
+			};
+		}
+		if (driver_cfg->spi_rx_bus_width & SPI_MODE_MASK) {
+			rx_spi_buf[1] = (struct spi_buf){
+				.buf = NULL,
+				.len = 8,
+				.bus_width = driver_cfg->spi_rx_bus_width,
+			};
+			rx_spi_buf[2] = (struct spi_buf){
+				.buf = data,
+				.len = length,
+				.bus_width = driver_cfg->spi_rx_bus_width,
+			};
+			rx_set.count += 1;
+		}
+	}
 
 	if (is_write) {
 		return spi_write_dt(&driver_cfg->spi, &tx_set);
@@ -775,6 +817,7 @@ static int mxicy_configure(const struct device *dev, const uint8_t *jedec_id)
 static int spi_nor_read(const struct device *dev, off_t addr, void *dest,
 			size_t size)
 {
+	const struct spi_nor_config *const driver_cfg = dev->config;
 	const size_t flash_size = dev_flash_size(dev);
 	int ret;
 
@@ -785,7 +828,11 @@ static int spi_nor_read(const struct device *dev, off_t addr, void *dest,
 
 	acquire_device(dev);
 
-	ret = spi_nor_cmd_addr_read(dev, SPI_NOR_CMD_READ, addr, dest, size);
+	if (driver_cfg->spi_rx_bus_width == BUS_WIDTH_QUAD) {
+		ret = spi_nor_cmd_addr_read(dev, SPI_NOR_CMD_QREAD, addr, dest, size);
+	} else {
+		ret = spi_nor_cmd_addr_read(dev, SPI_NOR_CMD_READ, addr, dest, size);
+	}
 
 	release_device(dev);
 	return ret;
@@ -823,6 +870,7 @@ static int spi_nor_write(const struct device *dev, off_t addr,
 			 const void *src,
 			 size_t size)
 {
+	const struct spi_nor_config *const driver_cfg = dev->config;
 	const size_t flash_size = dev_flash_size(dev);
 	const uint16_t page_size = dev_page_size(dev);
 	int ret;
@@ -854,9 +902,13 @@ static int spi_nor_write(const struct device *dev, off_t addr,
 			if (ret != 0) {
 				break;
 			}
-
-			ret = spi_nor_cmd_addr_write(dev, SPI_NOR_CMD_PP, addr,
+			if (driver_cfg->spi_tx_bus_width == BUS_WIDTH_QUAD) {
+				ret = spi_nor_cmd_addr_write(dev, SPI_NOR_CMD_PP_1_1_4, addr,
 						src, to_write);
+			} else {
+				ret = spi_nor_cmd_addr_write(dev, SPI_NOR_CMD_PP, addr,
+						src, to_write);
+			}
 			if (ret != 0) {
 				break;
 			}
@@ -1673,6 +1725,8 @@ static const struct flash_driver_api spi_nor_api = {
 	.requires_ulbpr_exist = DT_INST_PROP(idx, requires_ulbpr),				\
 	.wp_gpios_exist = DT_INST_NODE_HAS_PROP(idx, wp_gpios),					\
 	.hold_gpios_exist = DT_INST_NODE_HAS_PROP(idx, hold_gpios),				\
+	.spi_tx_bus_width = DT_INST_PROP_OR(idx, spi_tx_bus_width, 1),				\
+	.spi_rx_bus_width = DT_INST_PROP_OR(idx, spi_rx_bus_width, 1),				\
 	IF_ENABLED(INST_HAS_LOCK(idx), (.has_lock = DT_INST_PROP(idx, has_lock),))		\
 	IF_ENABLED(CONFIG_SPI_NOR_SFDP_MINIMAL, (CONFIGURE_4BYTE_ADDR(idx)))			\
 	IF_ENABLED(CONFIG_SPI_NOR_SFDP_DEVICETREE,						\
