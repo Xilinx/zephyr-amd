@@ -59,6 +59,7 @@ zephyr_library_sources_ifdef(CONFIG_FLASH_CDNS_NAND flash_cadence_nand.c flash_c
 zephyr_library_sources_ifdef(CONFIG_FLASH_MSPI_EMUL_DEVICE flash_mspi_emul_device.c)
 zephyr_library_sources_ifdef(CONFIG_FLASH_MSPI_ATXP032 flash_mspi_atxp032.c)
 zephyr_library_include_directories_ifdef(CONFIG_MSPI ${ZEPHYR_BASE}/drivers/mspi)
+zephyr_library_sources_ifdef(CONFIG_FLASH_CAD_OSPI_NOR flash_cadence_ospi_nor.c flash_cadence_qspi_nor_ll.c)
 if(CONFIG_FLASH_MCUX_FLEXSPI_XIP)
   dt_chosen(chosen_flash PROPERTY "zephyr,flash")
   dt_prop(compat_flash PATH ${chosen_flash} PROPERTY compatible)

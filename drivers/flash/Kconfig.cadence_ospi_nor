@@ -1,0 +1,56 @@
+# Copyright (c) 2025 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+config FLASH_CAD_OSPI_NOR
+	bool "Cadence Octal SPI Flash driver"
+	default y
+	depends on DT_HAS_XLNX_VERSAL_OSPI_1_0_ENABLED
+	select FLASH_HAS_PAGE_LAYOUT
+	select FLASH_HAS_DRIVER_ENABLED
+	select FLASH_HAS_EXPLICIT_ERASE
+	help
+	  Enable Cadence OSPI-NOR support.
+
+if FLASH_CAD_OSPI_NOR
+
+config CAD_QSPI_MICRON_MT35X_SUPPORT
+	bool "Cadence Octal SPI Micron MT35X Support"
+	default y
+	help
+	  Enable Micron MT35X Support.
+
+config QSPI_LAYOUT_PAGE_SIZE
+	int "Page size to use for FLASH_LAYOUT feature"
+	default 65536
+	help
+	  When CONFIG_FLASH_PAGE_LAYOUT is used this driver will support that API.
+	  By default the page size corresponds to the sector size (4096) for a NOR
+	  flash memory. Other options may include the 32K-byte erase size (32768),
+	  the block size (65536), or any non-zero multiple of the sector size.
+
+config CAD_QSPI_NOR_SECTOR_SIZE
+	hex "Cadence Quad SPI sector size"
+	default 0x10000
+	help
+	Set the Cadence Quad SPI sector size.
+
+config QSPI_ADDR_BYTES
+	int "Access QSPI address memory size in bytes"
+	default 2
+	help
+	  Set the address memory size in bytes when
+	  accessing QSPI.
+
+config QSPI_BYTES_PER_DEV
+	int "Set QSPI to read / write how many bytes per device"
+	default 256
+	help
+	  Set the size for a QSPI to read / write per device.
+
+config QSPI_BYTES_PER_BLOCK
+	int "Set QSPI to read / write how many bytes per block"
+	default 16
+	help
+	  Set the size for a QSPI to read / write per block.
+
+endif # FLASH_CAD_OSPI_NOR
