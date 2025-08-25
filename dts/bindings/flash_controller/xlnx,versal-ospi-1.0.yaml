@@ -1,0 +1,45 @@
+# Copyright (c) 2025 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+description: Cadence Quad-SPI NOR flash controller
+
+compatible: "xlnx,versal-ospi-1.0"
+
+include: cdns,qspi-nor.yaml
+
+properties:
+  size:
+    type: int
+    description: flash capacity in bits
+
+  cdns,fifo-depth:
+    type: int
+    description: Size of the data FIFO in words.
+
+  cdns,fifo-width:
+    type: int
+    description: Bus width of the data FIFO in bytes.
+
+  cdns,tslch-ns:
+    type: int
+    description: Delay in nanoseconds between setting qspi_n_ss_out low and
+                 first bit transfer.
+
+  cdns,tchsh-ns:
+    type: int
+    description: Delay in nanoseconds between last bit of current transaction and
+                 deasserting the device chip select (qspi_n_ss_out).
+
+  cdns,tsd2d-ns:
+    type: int
+    description: Delay in nanoseconds between one chip select being de-activated
+                 and the activation of another.
+
+  cdns,tshsl-ns:
+    type: int
+    description: Delay in nanoseconds for the length that the master mode chip select
+                 outputs are de-asserted between transactions.
+
+  cdns,read-delay:
+    type: int
+    description: Delay for read capture logic, in clock cycles.
