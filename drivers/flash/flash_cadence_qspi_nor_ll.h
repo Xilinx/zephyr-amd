@@ -184,5 +184,25 @@ int cad_qspi_read(struct cad_qspi_params *cad_params, void *buffer,
 	uint32_t offset, uint32_t size);
 int cad_qspi_update(struct cad_qspi_params *cad_params, void *buffer,
 	uint32_t offset, uint32_t size);
+int cad_qspi_stig_cmd_helper(struct cad_qspi_params *cad_params, int cs, uint32_t cmd,
+			     uint32_t *addr, uint32_t *data, uint32_t num_bytes, bool out);
+int cad_qspi_set_read_config(struct cad_qspi_params *cad_params, uint32_t opcode,
+			     uint32_t instr_type, uint32_t addr_type, uint32_t data_type,
+			     uint32_t mode_bit, uint32_t dummy_clk_cycle);
+int cad_qspi_set_write_config(struct cad_qspi_params *cad_params, uint32_t opcode,
+			      uint32_t addr_type, uint32_t data_type, uint32_t dummy_clk_cycle);
+int cad_qspi_set_baudrate_div(struct cad_qspi_params *cad_params, uint32_t div);
+int cad_qspi_idle(struct cad_qspi_params *cad_params);
+int cad_qspi_timing_config(struct cad_qspi_params *cad_params, uint32_t clkphase, uint32_t clkpol,
+			   uint32_t csda, uint32_t csdads, uint32_t cseot, uint32_t cssot,
+			   uint32_t rddatacap);
+int cad_qspi_int_disable(struct cad_qspi_params *cad_params, uint32_t mask);
+int cad_qspi_enable(struct cad_qspi_params *cad_params);
+int cad_qspi_configure_dev_size(struct cad_qspi_params *cad_params, uint32_t addr_bytes,
+				uint32_t bytes_per_dev, uint32_t bytes_per_block);
+int cad_qspi_read_bank(struct cad_qspi_params *cad_params, uint8_t *buffer, uint32_t offset,
+		       uint32_t size);
+int cad_qspi_indirect_page_bound_write(struct cad_qspi_params *cad_params, uint32_t offset,
+				       uint8_t *buffer, uint32_t len);
 
 #endif
