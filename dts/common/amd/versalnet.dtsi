@@ -394,5 +394,29 @@
 			#address-cells = <1>;
 			#size-cells = <1>;
 		};
+
+		i3c0: i3c@f1948000 {
+			compatible = "snps,designware-i3c";
+			status = "disabled";
+			#address-cells = <3>;
+			#size-cells = <0>;
+			reg = <0xf1948000 0x1000>;
+			interrupts = <GIC_SPI 21 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+			od-thigh-max-ns = <41>;
+			od-tlow-min-ns = <200>;
+			primary-controller-da = <1>;
+		};
+
+		i3c1: i3c@f1958000 {
+			compatible = "snps,designware-i3c";
+			status = "disabled";
+			#address-cells = <3>;
+			#size-cells = <0>;
+			reg = <0xf1958000 0x1000>;
+			interrupts = <GIC_SPI 22 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+			od-thigh-max-ns = <41>;
+			od-tlow-min-ns = <200>;
+			primary-controller-da = <1>;
+		};
 	};
 };
