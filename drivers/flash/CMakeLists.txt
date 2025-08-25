@@ -94,6 +94,7 @@ if(CONFIG_FLASH_SIMULATOR)
 endif()
 
 zephyr_library_include_directories_ifdef(CONFIG_MSPI ${ZEPHYR_BASE}/drivers/mspi)
+zephyr_library_sources_ifdef(CONFIG_FLASH_CAD_OSPI_NOR flash_cadence_ospi_nor.c flash_cadence_qspi_nor_ll.c)
 if(CONFIG_FLASH_MCUX_FLEXSPI_XIP)
   dt_chosen(chosen_flash PROPERTY "zephyr,flash")
   dt_prop(compat_flash PATH ${chosen_flash} PROPERTY compatible)
