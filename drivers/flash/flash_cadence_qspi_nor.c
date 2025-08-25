@@ -35,7 +35,7 @@ static const struct flash_parameters flash_cad_parameters = {
 #define DEV_DATA(dev)	((struct flash_cad_priv *)((dev)->data))
 #define DEV_CFG(dev)	((struct flash_cad_config *)((dev)->config))
 
-int cad_qspi_stig_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, uint32_t dummy)
+int flash_cad_qspi_stig_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, uint32_t dummy)
 {
 
 	if (!cad_params) {
@@ -54,8 +54,8 @@ int cad_qspi_stig_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, uint3
 					NULL, NULL, 0, 0);
 }
 
-int cad_qspi_stig_read_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, uint32_t dummy,
-			   uint32_t num_bytes, uint32_t *output)
+int flash_cad_qspi_stig_read_cmd(struct cad_qspi_params *cad_params, uint32_t opcode,
+				 uint32_t dummy, uint32_t num_bytes, uint32_t *output)
 {
 	if (dummy > ((1 << CAD_QSPI_FLASHCMD_NUM_DUMMYBYTES_MAX) - 1)) {
 		LOG_ERR("Faulty dummy byes\n");
@@ -85,8 +85,8 @@ int cad_qspi_stig_read_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, 
 	return 0;
 }
 
-int cad_qspi_stig_wr_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, uint32_t dummy,
-			 uint32_t num_bytes, uint32_t *input)
+int flash_cad_qspi_stig_wr_cmd(struct cad_qspi_params *cad_params, uint32_t opcode,
+			       uint32_t dummy, uint32_t num_bytes, uint32_t *input)
 {
 	if (dummy > ((1 << CAD_QSPI_FLASHCMD_NUM_DUMMYBYTES_MAX) - 1)) {
 		LOG_ERR("Faulty dummy byes\n");
@@ -112,8 +112,8 @@ int cad_qspi_stig_wr_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, ui
 					cmd, NULL, input, num_bytes, 1);
 }
 
-int cad_qspi_stig_addr_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, uint32_t dummy,
-			   uint32_t addr)
+int flash_cad_qspi_stig_addr_cmd(struct cad_qspi_params *cad_params, uint32_t opcode,
+				 uint32_t dummy, uint32_t addr)
 {
 	uint32_t cmd;
 
@@ -132,7 +132,7 @@ int cad_qspi_stig_addr_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, 
 					cmd, &addr, NULL, 0, 0);
 }
 
-int cad_qspi_device_bank_select(struct cad_qspi_params *cad_params, uint32_t bank)
+int flash_cad_qspi_device_bank_select(struct cad_qspi_params *cad_params, uint32_t bank)
 {
 	int status = 0;
 
@@ -141,28 +141,29 @@ int cad_qspi_device_bank_select(struct cad_qspi_params *cad_params, uint32_t ban
 		return -EINVAL;
 	}
 
-	status = cad_qspi_stig_cmd(cad_params, CAD_QSPI_STIG_OPCODE_WREN, 0);
+	status = flash_cad_qspi_stig_cmd(cad_params, CAD_QSPI_STIG_OPCODE_WREN, 0);
 
 	if (status != 0) {
 		return status;
 	}
 
-	status = cad_qspi_stig_wr_cmd(cad_params, CAD_QSPI_STIG_OPCODE_WREN_EXT_REG, 0, 1, &bank);
+	status = flash_cad_qspi_stig_wr_cmd(cad_params, CAD_QSPI_STIG_OPCODE_WREN_EXT_REG,
+					    0, 1, &bank);
 
 	if (status != 0) {
 		return status;
 	}
 
-	return cad_qspi_stig_cmd(cad_params, CAD_QSPI_STIG_OPCODE_WRDIS, 0);
+	return flash_cad_qspi_stig_cmd(cad_params, CAD_QSPI_STIG_OPCODE_WRDIS, 0);
 }
 
-int cad_qspi_device_status(struct cad_qspi_params *cad_params, uint32_t *status)
+int flash_cad_qspi_device_status(struct cad_qspi_params *cad_params, uint32_t *status)
 {
-	return cad_qspi_stig_read_cmd(cad_params, CAD_QSPI_STIG_OPCODE_RDSR, 0, 1, status);
+	return flash_cad_qspi_stig_read_cmd(cad_params, CAD_QSPI_STIG_OPCODE_RDSR, 0, 1, status);
 }
 
 #if CAD_QSPI_MICRON_N25Q_SUPPORT
-int cad_qspi_n25q_enable(struct cad_qspi_params *cad_params)
+int flash_cad_qspi_n25q_enable(struct cad_qspi_params *cad_params)
 {
 	cad_qspi_set_read_config(cad_params, QSPI_FAST_READ, CAD_QSPI_INST_SINGLE,
 				 CAD_QSPI_ADDR_FASTREAD, CAT_QSPI_ADDR_SINGLE_IO, 1, 0);
@@ -171,13 +172,14 @@ int cad_qspi_n25q_enable(struct cad_qspi_params *cad_params)
 	return 0;
 }
 
-int cad_qspi_n25q_wait_for_program_and_erase(struct cad_qspi_params *cad_params, int program_only)
+int flash_cad_qspi_n25q_wait_for_program_and_erase(struct cad_qspi_params *cad_params,
+						   int program_only)
 {
 	uint32_t status, flag_sr;
 	int count = 0;
 
 	while (count < CAD_QSPI_COMMAND_TIMEOUT) {
-		status = cad_qspi_device_status(cad_params, &status);
+		status = flash_cad_qspi_device_status(cad_params, &status);
 		if (status != 0) {
 			LOG_ERR("Error getting device status\n");
 			return -1;
@@ -195,8 +197,8 @@ int cad_qspi_n25q_wait_for_program_and_erase(struct cad_qspi_params *cad_params,
 	count = 0;
 
 	while (count < CAD_QSPI_COMMAND_TIMEOUT) {
-		status = cad_qspi_stig_read_cmd(cad_params, CAD_QSPI_STIG_OPCODE_RDFLGSR, 0, 1,
-						&flag_sr);
+		status = flash_cad_qspi_stig_read_cmd(cad_params, CAD_QSPI_STIG_OPCODE_RDFLGSR,
+						      0, 1, &flag_sr);
 		if (status != 0) {
 			LOG_ERR("Error waiting program and erase.\n");
 			return status;
@@ -213,7 +215,7 @@ int cad_qspi_n25q_wait_for_program_and_erase(struct cad_qspi_params *cad_params,
 	if ((program_only && CAD_QSPI_STIG_FLAGSR_PROGRAMERROR(flag_sr)) ||
 	    (!program_only && CAD_QSPI_STIG_FLAGSR_ERASEERROR(flag_sr))) {
 		LOG_ERR("Error programming/erasing flash\n");
-		cad_qspi_stig_cmd(cad_params, CAD_QSPI_STIG_OPCODE_CLFSR, 0);
+		flash_cad_qspi_stig_cmd(cad_params, CAD_QSPI_STIG_OPCODE_CLFSR, 0);
 		return -1;
 	}
 
@@ -221,7 +223,7 @@ int cad_qspi_n25q_wait_for_program_and_erase(struct cad_qspi_params *cad_params,
 }
 #endif
 
-int cad_qspi_enable_subsector_bank(struct cad_qspi_params *cad_params, uint32_t addr)
+int flash_cad_qspi_enable_subsector_bank(struct cad_qspi_params *cad_params, uint32_t addr)
 {
 	int status = 0;
 
@@ -230,24 +232,25 @@ int cad_qspi_enable_subsector_bank(struct cad_qspi_params *cad_params, uint32_t 
 		return -EINVAL;
 	}
 
-	status = cad_qspi_stig_cmd(cad_params, CAD_QSPI_STIG_OPCODE_WREN, 0);
+	status = flash_cad_qspi_stig_cmd(cad_params, CAD_QSPI_STIG_OPCODE_WREN, 0);
 
 	if (status != 0) {
 		return status;
 	}
 
-	status = cad_qspi_stig_addr_cmd(cad_params, CAD_QSPI_STIG_OPCODE_SUBSEC_ERASE, 0, addr);
+	status = flash_cad_qspi_stig_addr_cmd(cad_params, CAD_QSPI_STIG_OPCODE_SUBSEC_ERASE,
+					      0, addr);
 	if (status != 0) {
 		return status;
 	}
 
 #if CAD_QSPI_MICRON_N25Q_SUPPORT
-	status = cad_qspi_n25q_wait_for_program_and_erase(cad_params, 0);
+	status = flash_cad_qspi_n25q_wait_for_program_and_erase(cad_params, 0);
 #endif
 	return status;
 }
 
-int cad_qspi_erase_subsector(struct cad_qspi_params *cad_params, uint32_t addr)
+int flash_cad_qspi_erase_subsector(struct cad_qspi_params *cad_params, uint32_t addr)
 {
 	int status = 0;
 
@@ -256,15 +259,15 @@ int cad_qspi_erase_subsector(struct cad_qspi_params *cad_params, uint32_t addr)
 		return -EINVAL;
 	}
 
-	status = cad_qspi_device_bank_select(cad_params, addr >> 24);
+	status = flash_cad_qspi_device_bank_select(cad_params, addr >> 24);
 	if (status != 0) {
 		return status;
 	}
 
-	return cad_qspi_enable_subsector_bank(cad_params, addr);
+	return flash_cad_qspi_enable_subsector_bank(cad_params, addr);
 }
 
-int cad_qspi_erase_sector(struct cad_qspi_params *cad_params, uint32_t addr)
+int flash_cad_qspi_erase_sector(struct cad_qspi_params *cad_params, uint32_t addr)
 {
 	int status = 0;
 
@@ -273,31 +276,31 @@ int cad_qspi_erase_sector(struct cad_qspi_params *cad_params, uint32_t addr)
 		return -EINVAL;
 	}
 
-	status = cad_qspi_device_bank_select(cad_params, addr >> 24);
+	status = flash_cad_qspi_device_bank_select(cad_params, addr >> 24);
 
 	if (status != 0) {
 		return status;
 	}
 
-	status = cad_qspi_stig_cmd(cad_params, CAD_QSPI_STIG_OPCODE_WREN, 0);
+	status = flash_cad_qspi_stig_cmd(cad_params, CAD_QSPI_STIG_OPCODE_WREN, 0);
 
 	if (status != 0) {
 		return status;
 	}
 
-	status = cad_qspi_stig_addr_cmd(cad_params, CAD_QSPI_STIG_OPCODE_SEC_ERASE, 0, addr);
+	status = flash_cad_qspi_stig_addr_cmd(cad_params, CAD_QSPI_STIG_OPCODE_SEC_ERASE, 0, addr);
 	if (status != 0) {
 		return status;
 	}
 
 #if CAD_QSPI_MICRON_N25Q_SUPPORT
-	status = cad_qspi_n25q_wait_for_program_and_erase(cad_params, 0);
+	status = flash_cad_qspi_n25q_wait_for_program_and_erase(cad_params, 0);
 #endif
 	return status;
 }
 
-void cad_qspi_calibration(struct cad_qspi_params *cad_params, uint32_t dev_clk,
-			  uint32_t qspi_clk_mhz)
+void flash_cad_qspi_calibration(struct cad_qspi_params *cad_params, uint32_t dev_clk,
+				uint32_t qspi_clk_mhz)
 {
 	int status;
 	uint32_t dev_sclk_mhz = 27; /*min value to get biggest 0xF div factor*/
@@ -319,7 +322,8 @@ void cad_qspi_calibration(struct cad_qspi_params *cad_params, uint32_t dev_clk,
 	div_bits = (((div_actual + 1) / 2) - 1);
 	status = cad_qspi_set_baudrate_div(cad_params, 0xf);
 
-	status = cad_qspi_stig_read_cmd(cad_params, CAD_QSPI_STIG_OPCODE_RDID, 0, 3, &sample_rdid);
+	status = flash_cad_qspi_stig_read_cmd(cad_params, CAD_QSPI_STIG_OPCODE_RDID,
+					      0, 3, &sample_rdid);
 	if (status != 0) {
 		return;
 	}
@@ -348,7 +352,8 @@ void cad_qspi_calibration(struct cad_qspi_params *cad_params, uint32_t dev_clk,
 			break;
 		}
 
-		status = cad_qspi_stig_read_cmd(cad_params, CAD_QSPI_STIG_OPCODE_RDID, 0, 3, &rdid);
+		status = flash_cad_qspi_stig_read_cmd(cad_params, CAD_QSPI_STIG_OPCODE_RDID,
+						      0, 3, &rdid);
 		if (status != 0) {
 			break;
 		}
@@ -375,16 +380,16 @@ void cad_qspi_calibration(struct cad_qspi_params *cad_params, uint32_t dev_clk,
 
 	sys_write32(CAD_QSPI_RDDATACAP_BYP(1) | CAD_QSPI_RDDATACAP_DELAY(data_cap_delay),
 		    cad_params->reg_base + CAD_QSPI_RDDATACAP);
-	status = cad_qspi_stig_read_cmd(cad_params, CAD_QSPI_STIG_OPCODE_RDID, 0, 3, &rdid);
+	status = flash_cad_qspi_stig_read_cmd(cad_params, CAD_QSPI_STIG_OPCODE_RDID, 0, 3, &rdid);
 
 	if (status != 0) {
 		return;
 	}
 }
 
-int cad_qspi_init(struct cad_qspi_params *cad_params, uint32_t clk_phase, uint32_t clk_pol,
-		  uint32_t csda, uint32_t csdads, uint32_t cseot, uint32_t cssot,
-		  uint32_t rddatacap)
+int flash_cad_qspi_init(struct cad_qspi_params *cad_params, uint32_t clk_phase, uint32_t clk_pol,
+			uint32_t csda, uint32_t csdads, uint32_t cseot, uint32_t cssot,
+			uint32_t rddatacap)
 {
 	int status = 0;
 	uint32_t qspi_desired_clk_freq;
@@ -425,7 +430,7 @@ int cad_qspi_init(struct cad_qspi_params *cad_params, uint32_t clk_phase, uint32
 	}
 
 #if CAD_QSPI_MICRON_N25Q_SUPPORT
-	status = cad_qspi_n25q_enable(cad_params);
+	status = flash_cad_qspi_n25q_enable(cad_params);
 	if (status != 0) {
 		LOG_ERR("failed qspi flash enable\n");
 		return status;
@@ -433,9 +438,9 @@ int cad_qspi_init(struct cad_qspi_params *cad_params, uint32_t clk_phase, uint32
 #endif
 
 	qspi_desired_clk_freq = 100;
-	cad_qspi_calibration(cad_params, qspi_desired_clk_freq, cad_params->clk_rate);
+	flash_cad_qspi_calibration(cad_params, qspi_desired_clk_freq, cad_params->clk_rate);
 
-	status = cad_qspi_stig_read_cmd(cad_params, CAD_QSPI_STIG_OPCODE_RDID, 0, 3, &rdid);
+	status = flash_cad_qspi_stig_read_cmd(cad_params, CAD_QSPI_STIG_OPCODE_RDID, 0, 3, &rdid);
 
 	if (status != 0) {
 		LOG_ERR("Error reading RDID\n");
@@ -484,7 +489,8 @@ int cad_qspi_init(struct cad_qspi_params *cad_params, uint32_t clk_phase, uint32
 	return status;
 }
 
-int cad_qspi_read(struct cad_qspi_params *cad_params, void *buffer, uint32_t offset, uint32_t size)
+int flash_cad_qspi_read(struct cad_qspi_params *cad_params, void *buffer,
+			uint32_t offset, uint32_t size)
 {
 	uint32_t bank_count, bank_addr, bank_offset, copy_len;
 	uint8_t *read_data;
@@ -524,7 +530,8 @@ int cad_qspi_read(struct cad_qspi_params *cad_params, void *buffer, uint32_t off
 	copy_len = MIN(size, CAD_QSPI_BANK_SIZE - bank_offset);
 
 	for (i = 0; i < bank_count; ++i) {
-		status = cad_qspi_device_bank_select(cad_params, CAD_QSPI_BANK_ADDR(bank_addr));
+		status = flash_cad_qspi_device_bank_select(cad_params,
+							   CAD_QSPI_BANK_ADDR(bank_addr));
 		if (status != 0) {
 			break;
 		}
@@ -545,7 +552,7 @@ int cad_qspi_read(struct cad_qspi_params *cad_params, void *buffer, uint32_t off
 	return status;
 }
 
-int cad_qspi_erase(struct cad_qspi_params *cad_params, uint32_t offset, uint32_t size)
+int flash_cad_qspi_erase(struct cad_qspi_params *cad_params, uint32_t offset, uint32_t size)
 {
 	int status = 0;
 	uint32_t subsector_offset = offset & (CAD_QSPI_SUBSECTOR_SIZE - 1);
@@ -557,7 +564,7 @@ int cad_qspi_erase(struct cad_qspi_params *cad_params, uint32_t offset, uint32_t
 	}
 
 	while (size) {
-		status = cad_qspi_erase_subsector(cad_params, offset);
+		status = flash_cad_qspi_erase_subsector(cad_params, offset);
 
 		if (status != 0) {
 			break;
@@ -570,8 +577,8 @@ int cad_qspi_erase(struct cad_qspi_params *cad_params, uint32_t offset, uint32_t
 	return status;
 }
 
-int cad_qspi_write_bank(struct cad_qspi_params *cad_params, uint32_t offset, uint8_t *buffer,
-			uint32_t size)
+int flash_cad_qspi_write_bank(struct cad_qspi_params *cad_params, uint32_t offset, uint8_t *buffer,
+			      uint32_t size)
 {
 	int status = 0;
 	uint32_t page_offset = offset & (CAD_QSPI_PAGE_SIZE - 1);
@@ -589,7 +596,7 @@ int cad_qspi_write_bank(struct cad_qspi_params *cad_params, uint32_t offset, uin
 		}
 
 #if CAD_QSPI_MICRON_N25Q_SUPPORT
-		status = cad_qspi_n25q_wait_for_program_and_erase(cad_params, 1);
+		status = flash_cad_qspi_n25q_wait_for_program_and_erase(cad_params, 1);
 		if (status != 0) {
 			break;
 		}
@@ -603,7 +610,8 @@ int cad_qspi_write_bank(struct cad_qspi_params *cad_params, uint32_t offset, uin
 	return status;
 }
 
-int cad_qspi_write(struct cad_qspi_params *cad_params, void *buffer, uint32_t offset, uint32_t size)
+int flash_cad_qspi_write(struct cad_qspi_params *cad_params, void *buffer, uint32_t offset,
+			 uint32_t size)
 {
 	int status, i;
 	uint32_t bank_count, bank_addr, bank_offset, copy_len;
@@ -635,13 +643,14 @@ int cad_qspi_write(struct cad_qspi_params *cad_params, void *buffer, uint32_t of
 	copy_len = MIN(size, CAD_QSPI_BANK_SIZE - bank_offset);
 
 	for (i = 0; i < bank_count; ++i) {
-		status = cad_qspi_device_bank_select(cad_params, CAD_QSPI_BANK_ADDR(bank_addr));
+		status = flash_cad_qspi_device_bank_select(cad_params,
+							   CAD_QSPI_BANK_ADDR(bank_addr));
 
 		if (status != 0) {
 			break;
 		}
 
-		status = cad_qspi_write_bank(cad_params, bank_offset, write_data, copy_len);
+		status = flash_cad_qspi_write_bank(cad_params, bank_offset, write_data, copy_len);
 		if (status != 0) {
 			break;
 		}
@@ -656,8 +665,8 @@ int cad_qspi_write(struct cad_qspi_params *cad_params, void *buffer, uint32_t of
 	return status;
 }
 
-int cad_qspi_update(struct cad_qspi_params *cad_params, void *buffer, uint32_t offset,
-		    uint32_t size)
+int flash_cad_qspi_update(struct cad_qspi_params *cad_params, void *buffer, uint32_t offset,
+			  uint32_t size)
 {
 	int status = 0;
 
@@ -666,19 +675,19 @@ int cad_qspi_update(struct cad_qspi_params *cad_params, void *buffer, uint32_t o
 		return -EINVAL;
 	}
 
-	status = cad_qspi_erase(cad_params, offset, size);
+	status = flash_cad_qspi_erase(cad_params, offset, size);
 
 	if (status != 0) {
 		return status;
 	}
 
-	return cad_qspi_write(cad_params, buffer, offset, size);
+	return flash_cad_qspi_write(cad_params, buffer, offset, size);
 }
 
-void cad_qspi_reset(struct cad_qspi_params *cad_params)
+void flash_cad_qspi_reset(struct cad_qspi_params *cad_params)
 {
-	cad_qspi_stig_cmd(cad_params, CAD_QSPI_STIG_OPCODE_RESET_EN, 0);
-	cad_qspi_stig_cmd(cad_params, CAD_QSPI_STIG_OPCODE_RESET_MEM, 0);
+	flash_cad_qspi_stig_cmd(cad_params, CAD_QSPI_STIG_OPCODE_RESET_EN, 0);
+	flash_cad_qspi_stig_cmd(cad_params, CAD_QSPI_STIG_OPCODE_RESET_MEM, 0);
 }
 
 static int flash_cad_read(const struct device *dev, off_t offset,
@@ -693,7 +702,7 @@ static int flash_cad_read(const struct device *dev, off_t offset,
 		return -EINVAL;
 	}
 
-	rc = cad_qspi_read(cad_params, data, (uint32_t)offset, len);
+	rc = flash_cad_qspi_read(cad_params, data, (uint32_t)offset, len);
 
 	if (rc < 0) {
 		LOG_ERR("Cadence QSPI Flash Read Failed");
@@ -715,7 +724,7 @@ static int flash_cad_erase(const struct device *dev, off_t offset,
 		return -EINVAL;
 	}
 
-	rc = cad_qspi_erase(cad_params, (uint32_t)offset, len);
+	rc = flash_cad_qspi_erase(cad_params, (uint32_t)offset, len);
 
 	if (rc < 0) {
 		LOG_ERR("Cadence QSPI Flash Erase Failed!");
@@ -737,7 +746,7 @@ static int flash_cad_write(const struct device *dev, off_t offset,
 		return -EINVAL;
 	}
 
-	rc = cad_qspi_write(cad_params, (void *)data, (uint32_t)offset, len);
+	rc = flash_cad_qspi_write(cad_params, (void *)data, (uint32_t)offset, len);
 
 	if (rc < 0) {
 		LOG_ERR("Cadence QSPI Flash Write Failed!");
@@ -774,10 +783,10 @@ static int flash_cad_init(const struct device *dev)
 	cad_params->reg_base = DEVICE_MMIO_NAMED_GET(dev, qspi_reg);
 	cad_params->data_base = DEVICE_MMIO_NAMED_GET(dev, qspi_data);
 
-	rc = cad_qspi_init(cad_params, QSPI_CONFIG_CPHA,
-			QSPI_CONFIG_CPOL, QSPI_CONFIG_CSDA,
-			QSPI_CONFIG_CSDADS, QSPI_CONFIG_CSEOT,
-			QSPI_CONFIG_CSSOT, 0);
+	rc = flash_cad_qspi_init(cad_params, QSPI_CONFIG_CPHA,
+				 QSPI_CONFIG_CPOL, QSPI_CONFIG_CSDA,
+				 QSPI_CONFIG_CSDADS, QSPI_CONFIG_CSEOT,
+				 QSPI_CONFIG_CSSOT, 0);
 
 	if (rc < 0) {
 		LOG_ERR("Cadence QSPI Flash Init Failed");
