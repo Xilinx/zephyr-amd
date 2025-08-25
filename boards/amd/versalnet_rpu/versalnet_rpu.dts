@@ -51,6 +51,12 @@
 		#clock-cells = <0>;
 		clock-frequency = <450000000>;
 	};
+
+	i3cclk: i3c-clk {
+		compatible = "fixed-clock";
+		clock-frequency = <160000000>;
+		#clock-cells = <0>;
+	};
 };
 
 &spi0 {
@@ -191,4 +197,12 @@
 &adma7 {
 	status = "okay";
 	clocks = <&adma_ref_clk>, <&adma_ref_clk>;
+};
+
+&i3c0 {
+	clocks = <&i3cclk>;
+};
+
+&i3c1 {
+	clocks = <&i3cclk>;
 };
