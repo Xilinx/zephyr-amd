@@ -86,6 +86,7 @@ enum ZynqMPGQSPIRegisters {
 #define GQSPI_GEN_FIFO_SPI_MODE_DUAL   2
 #define GQSPI_GEN_FIFO_SPI_MODE_QUAD   3
 #define GQSPI_GEN_FIFO_EXPONENT_MASK   BIT(9)
+#define GQSPI_GEN_FIFO_EXP_START       BIT(8)
 #define GQSPI_GEN_FIFO_DATA_XFER_MASK  BIT(8)
 #define GQSPI_GEN_FIFO_IMMED_DATA_MASK BIT_MASK(8)
 
@@ -441,28 +442,39 @@ static int xlnx_zynqmp_gqspi_transceive(const struct device *dev, const struct s
 
 		if (transfer_bytes < 256) {
 			genfifo_entry |= transfer_bytes;
+			xlnx_zynqmp_gqspi_write32(dev, GQSPI_GEN_FIFO, genfifo_entry);
+			LOG_DBG("Buffer %zu, TX bytes: %zu, RX bytes: %zu, transfer bytes: %zu, "
+				"genfifo_entry: 0x%08x",
+				buf, tx_bytes, rx_bytes, transfer_bytes, genfifo_entry);
 		} else {
-			uint32_t exponent = GQSPI_MAX_EXPONENT;
-			size_t exponent_len = 1 << exponent;
+			uint32_t temp_count = transfer_bytes;
+			uint32_t exponent = 8;
+			uint32_t imm_data = temp_count & GQSPI_GEN_FIFO_IMMED_DATA_MASK;
 
-			while (exponent_len > transfer_bytes) {
-				exponent_len >>= 1;
-				exponent--;
+			genfifo_entry |= GQSPI_GEN_FIFO_EXPONENT_MASK;
+			/* Exponent data entry */
+			while (temp_count != 0U) {
+				if ((temp_count & GQSPI_GEN_FIFO_EXP_START) != (uint32_t)false) {
+					genfifo_entry &= ~(GQSPI_GEN_FIFO_IMMED_DATA_MASK);
+					genfifo_entry |= exponent;
+					LOG_DBG("Exponent entry: Buffer %zu, TX bytes: %zu, RX bytes: %zu, transfer bytes: %zu, "
+						"genfifo_entry: 0x%08x\n", buf, tx_bytes, rx_bytes, transfer_bytes, genfifo_entry);
+					xlnx_zynqmp_gqspi_write32(dev, GQSPI_GEN_FIFO, genfifo_entry);
+				}
+				temp_count = temp_count >> 1;
+				exponent++;
 			}
-			if (exponent_len != transfer_bytes) {
-				/* Could do this by breaking buffer into multiple transfer requests,
-				 * but not implemented yet
-				 */
-				LOG_ERR("Unsupported buffer size %zu", transfer_bytes);
-				ret = -ENOTSUP;
-				goto out;
+			/* Immediate data entry */
+			genfifo_entry &= ~(uint32_t)GQSPI_GEN_FIFO_EXPONENT_MASK;
+			if ((imm_data & GQSPI_GEN_FIFO_IMMED_DATA_MASK) != (uint32_t)false) {
+				genfifo_entry &= ~(GQSPI_GEN_FIFO_IMMED_DATA_MASK);
+				genfifo_entry |= imm_data & GQSPI_GEN_FIFO_IMMED_DATA_MASK;
+				LOG_DBG("Immediate entry: Buffer %zu, TX bytes: %zu, RX bytes: %zu, transfer bytes: %zu, "
+					"genfifo_entry: 0x%08x\n",
+					buf, tx_bytes, rx_bytes, transfer_bytes, genfifo_entry);
+				xlnx_zynqmp_gqspi_write32(dev, GQSPI_GEN_FIFO, genfifo_entry);
 			}
-			genfifo_entry |= GQSPI_GEN_FIFO_EXPONENT_MASK | exponent;
 		}
-		LOG_DBG("Buffer %zu, TX bytes: %zu, RX bytes: %zu, transfer bytes: %zu, "
-			"genfifo_entry: 0x%08x",
-			buf, tx_bytes, rx_bytes, transfer_bytes, genfifo_entry);
-		xlnx_zynqmp_gqspi_write32(dev, GQSPI_GEN_FIFO, genfifo_entry);
 	}
 
 	xlnx_zynqmp_gqspi_cs_control(dev, false);
