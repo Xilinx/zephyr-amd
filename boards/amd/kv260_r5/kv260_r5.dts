@@ -72,3 +72,28 @@
 		read-only;
 	};
 };
+
+&qspi {
+	status = "okay";
+	clock-frequency = <120000000>;
+
+	flash@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>; /* Chip select 0 */
+		spi-max-frequency = <1000000>;
+		jedec-id = [20 bb 20]; /* Micron mt25qu512a */
+		size = <DT_SIZE_M(256)>; /* 256MB */
+		spi-tx-bus-width = <4>;
+		spi-rx-bus-width = <4>;
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			storage_partition: partition@0 {
+				label = "storage";
+				reg = <0x00000000 DT_SIZE_M(256)>;
+			};
+		};
+	};
+};

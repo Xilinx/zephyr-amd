@@ -9,6 +9,8 @@ supported:
   - i2c
   - eeprom
   - gpio
+  - spi
+  - flash
 testing:
   ignore_tags:
     - net
