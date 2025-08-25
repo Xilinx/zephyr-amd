@@ -1,0 +1,18 @@
+&i3c0 {
+	status = "okay";
+	i3c-scl-hz = <12500000>;
+	i2c-scl-hz = <400000>;
+
+	lsm6dso0: lsm6dso@6b {
+		compatible = "st,lsm6dso";
+		reg = <0x6b 0x00 0x20>;
+		status = "okay";
+		accel-pm = <0x0>;
+		accel-range = <0x0>;
+		accel-odr = <0x4>;
+		gyro-pm = <0x0>;
+		gyro-range = <0x0>;
+		gyro-odr = <0x4>;
+		drdy-pulsed;
+	};
+};
