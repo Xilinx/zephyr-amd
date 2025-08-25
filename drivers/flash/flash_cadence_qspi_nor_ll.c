@@ -113,7 +113,8 @@ int cad_qspi_timing_config(struct cad_qspi_params *cad_params, uint32_t clkphase
 	return 0;
 }
 
-int cad_qspi_stig_cmd_helper(struct cad_qspi_params *cad_params, int cs, uint32_t cmd)
+int cad_qspi_stig_cmd_helper(struct cad_qspi_params *cad_params, int cs, uint32_t cmd,
+			     uint32_t *addr, uint32_t *data, uint32_t num_bytes, bool out)
 {
 	uint32_t count = 0;
 
@@ -122,6 +123,16 @@ int cad_qspi_stig_cmd_helper(struct cad_qspi_params *cad_params, int cs, uint32_
 		return -EINVAL;
 	}
 
+	if (addr)
+		sys_write32(*addr, cad_params->reg_base + CAD_QSPI_FLASHCMD_ADDR);
+
+	/* write data */
+	if (data && out) {
+		sys_write32(data[0], cad_params->reg_base + CAD_QSPI_FLASHCMD_WRDATA0);
+
+		if (num_bytes > 4)
+			sys_write32(data[1], cad_params->reg_base + CAD_QSPI_FLASHCMD_WRDATA1);
+	}
 	/* chip select */
 	sys_write32((sys_read32(cad_params->reg_base + CAD_QSPI_CFG) & CAD_QSPI_CFG_CS_MSK) |
 			    CAD_QSPI_CFG_CS(cs),
@@ -143,6 +154,14 @@ int cad_qspi_stig_cmd_helper(struct cad_qspi_params *cad_params, int cs, uint32_
 		return CAD_QSPI_ERROR;
 	}
 
+	/* read data */
+	if (data && !out) {
+		data[0] = sys_read32(cad_params->reg_base + CAD_QSPI_FLASHCMD_RDDATA0);
+
+		if (num_bytes > 4) {
+			data[1] = sys_read32(cad_params->reg_base + CAD_QSPI_FLASHCMD_RDDATA1);
+		}
+	}
 	return 0;
 }
 
@@ -161,7 +180,8 @@ int cad_qspi_stig_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, uint3
 
 	return cad_qspi_stig_cmd_helper(cad_params, cad_params->cad_qspi_cs,
 					CAD_QSPI_FLASHCMD_OPCODE(opcode) |
-						CAD_QSPI_FLASHCMD_NUM_DUMMYBYTES(dummy));
+					CAD_QSPI_FLASHCMD_NUM_DUMMYBYTES(dummy),
+					NULL, NULL, 0, 0);
 }
 
 int cad_qspi_stig_read_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, uint32_t dummy,
@@ -186,15 +206,10 @@ int cad_qspi_stig_read_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, 
 		       CAD_QSPI_FLASHCMD_NUMADDRBYTES(0) | CAD_QSPI_FLASHCMD_ENWRDATA(0) |
 		       CAD_QSPI_FLASHCMD_NUMWRDATABYTES(0) | CAD_QSPI_FLASHCMD_NUMDUMMYBYTES(dummy);
 
-	if (cad_qspi_stig_cmd_helper(cad_params, cad_params->cad_qspi_cs, cmd)) {
+	if (cad_qspi_stig_cmd_helper(cad_params, cad_params->cad_qspi_cs,
+				     cmd, NULL, output, num_bytes, 0)) {
 		LOG_ERR("failed to send stig cmd\n");
 		return -1;
-	}
-
-	output[0] = sys_read32(cad_params->reg_base + CAD_QSPI_FLASHCMD_RDDATA0);
-
-	if (num_bytes > 4) {
-		output[1] = sys_read32(cad_params->reg_base + CAD_QSPI_FLASHCMD_RDDATA1);
 	}
 
 	return 0;
@@ -223,12 +238,8 @@ int cad_qspi_stig_wr_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, ui
 		       CAD_QSPI_FLASHCMD_NUMWRDATABYTES(num_bytes - 1) |
 		       CAD_QSPI_FLASHCMD_NUMDUMMYBYTES(dummy);
 
-	sys_write32(input[0], cad_params->reg_base + CAD_QSPI_FLASHCMD_WRDATA0);
-
-	if (num_bytes > 4)
-		sys_write32(input[1], cad_params->reg_base + CAD_QSPI_FLASHCMD_WRDATA1);
-
-	return cad_qspi_stig_cmd_helper(cad_params, cad_params->cad_qspi_cs, cmd);
+	return cad_qspi_stig_cmd_helper(cad_params, cad_params->cad_qspi_cs,
+					cmd, NULL, input, num_bytes, 1);
 }
 
 int cad_qspi_stig_addr_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, uint32_t dummy,
@@ -247,9 +258,8 @@ int cad_qspi_stig_addr_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, 
 	cmd = CAD_QSPI_FLASHCMD_OPCODE(opcode) | CAD_QSPI_FLASHCMD_NUMDUMMYBYTES(dummy) |
 	      CAD_QSPI_FLASHCMD_ENCMDADDR(1) | CAD_QSPI_FLASHCMD_NUMADDRBYTES(2);
 
-	sys_write32(addr, cad_params->reg_base + CAD_QSPI_FLASHCMD_ADDR);
-
-	return cad_qspi_stig_cmd_helper(cad_params, cad_params->cad_qspi_cs, cmd);
+	return cad_qspi_stig_cmd_helper(cad_params, cad_params->cad_qspi_cs,
+					cmd, &addr, NULL, 0, 0);
 }
 
 int cad_qspi_device_bank_select(struct cad_qspi_params *cad_params, uint32_t bank)
@@ -373,25 +383,8 @@ int cad_qspi_indirect_write_start_bank(struct cad_qspi_params *cad_params, uint3
 	return 0;
 }
 
-int cad_qspi_indirect_write_finish(struct cad_qspi_params *cad_params)
-{
-
-	if (cad_params == NULL) {
-		LOG_ERR("Wrong parameter\n");
-		return -EINVAL;
-	}
-
-#if CAD_QSPI_MICRON_N25Q_SUPPORT
-	return cad_qspi_n25q_wait_for_program_and_erase(cad_params, 1);
-#else
-	return 0;
-#endif
-}
-
 int cad_qspi_enable(struct cad_qspi_params *cad_params)
 {
-	int status;
-
 	if (cad_params == NULL) {
 		LOG_ERR("Wrong parameter\n");
 		return -EINVAL;
@@ -399,12 +392,6 @@ int cad_qspi_enable(struct cad_qspi_params *cad_params)
 
 	sys_set_bits(cad_params->reg_base + CAD_QSPI_CFG, CAD_QSPI_CFG_ENABLE);
 
-#if CAD_QSPI_MICRON_N25Q_SUPPORT
-	status = cad_qspi_n25q_enable(cad_params);
-	if (status != 0) {
-		return status;
-	}
-#endif
 	return 0;
 }
 
@@ -638,6 +625,14 @@ int cad_qspi_init(struct cad_qspi_params *cad_params, uint32_t clk_phase, uint32
 		return status;
 	}
 
+#if CAD_QSPI_MICRON_N25Q_SUPPORT
+	status = cad_qspi_n25q_enable(cad_params);
+	if (status != 0) {
+		LOG_ERR("failed qspi flash enable\n");
+		return status;
+	}
+#endif
+
 	qspi_desired_clk_freq = 100;
 	cad_qspi_calibration(cad_params, qspi_desired_clk_freq, cad_params->clk_rate);
 
@@ -723,7 +718,8 @@ int cad_qspi_indirect_page_bound_write(struct cad_qspi_params *cad_params, uint3
 
 		write_count += space * sizeof(uint32_t);
 	}
-	return cad_qspi_indirect_write_finish(cad_params);
+
+	return 0;
 }
 
 int cad_qspi_read_bank(struct cad_qspi_params *cad_params, uint8_t *buffer, uint32_t offset,
@@ -777,6 +773,13 @@ int cad_qspi_write_bank(struct cad_qspi_params *cad_params, uint32_t offset, uin
 		if (status != 0) {
 			break;
 		}
+
+#if CAD_QSPI_MICRON_N25Q_SUPPORT
+		status = cad_qspi_n25q_wait_for_program_and_erase(cad_params, 1);
+		if (status != 0) {
+			break;
+		}
+#endif
 
 		offset += write_size;
 		buffer += write_size;
