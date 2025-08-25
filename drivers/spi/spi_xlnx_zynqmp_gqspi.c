@@ -137,6 +137,10 @@ enum ZynqMPGQSPIRegisters {
 #define GQSPI_LPBK_DLY_ADJ_LOOPBACK_ENABLE  0x20
 #define GQSPI_DATA_DLY_ADJ_LOOPBACK_ENABLE  0xA0000000
 
+#define GQSPI_SELECT_MODE_SPI		0x1
+#define GQSPI_SELECT_MODE_DUALSPI	0x2
+#define GQSPI_SELECT_MODE_QUADSPI	0x4
+
 struct xlnx_zynqmp_gqspi_config {
 	mm_reg_t base;
 	void (*irq_config_func)(const struct device *dev);
@@ -363,6 +367,7 @@ static int xlnx_zynqmp_gqspi_transceive(const struct device *dev, const struct s
 	const struct xlnx_zynqmp_gqspi_config *config = dev->config;
 	struct xlnx_zynqmp_gqspi_data *data = dev->data;
 	struct spi_context *ctx = &data->ctx;
+	uint32_t bus_width;
 	int ret;
 	const size_t num_bufs = Z_MAX(tx_bufs ? tx_bufs->count : 0, rx_bufs ? rx_bufs->count : 0);
 
@@ -395,14 +400,17 @@ static int xlnx_zynqmp_gqspi_transceive(const struct device *dev, const struct s
 		size_t rx_bytes = 0;
 		size_t transfer_bytes;
 
+		bus_width = GQSPI_GEN_FIFO_SPI_MODE_SINGLE;
 		if (tx_bufs && buf < tx_bufs->count) {
 			tx_bytes = tx_bufs->buffers[buf].len;
+			bus_width = tx_bufs->buffers[buf].bus_width;;
 			if (tx_bytes && tx_bufs->buffers[buf].buf) {
 				genfifo_entry |= GQSPI_GEN_FIFO_TX_EN_MASK;
 			}
 		}
 		if (rx_bufs && buf < rx_bufs->count) {
 			rx_bytes = rx_bufs->buffers[buf].len;
+			bus_width = rx_bufs->buffers[buf].bus_width;
 			if (rx_bytes && rx_bufs->buffers[buf].buf) {
 				genfifo_entry |= GQSPI_GEN_FIFO_RX_EN_MASK;
 				if ((genfifo_entry & GQSPI_GEN_FIFO_TX_EN_MASK) &&
@@ -424,16 +432,16 @@ static int xlnx_zynqmp_gqspi_transceive(const struct device *dev, const struct s
 			genfifo_entry |=
 				GQSPI_GEN_FIFO_CS_LOWER_MASK | GQSPI_GEN_FIFO_BUS_LOWER_MASK;
 		}
-		switch (ctx->config->operation & SPI_LINES_MASK) {
-		case SPI_LINES_DUAL:
+		switch (bus_width) {
+		case GQSPI_SELECT_MODE_DUALSPI:
 			genfifo_entry |= GQSPI_GEN_FIFO_SPI_MODE_DUAL
 					 << GQSPI_GEN_FIFO_SPI_MODE_SHIFT;
 			break;
-		case SPI_LINES_QUAD:
+		case GQSPI_SELECT_MODE_QUADSPI:
 			genfifo_entry |= GQSPI_GEN_FIFO_SPI_MODE_QUAD
 					 << GQSPI_GEN_FIFO_SPI_MODE_SHIFT;
 			break;
-		case SPI_LINES_SINGLE:
+		case GQSPI_SELECT_MODE_SPI:
 		default:
 			genfifo_entry |= GQSPI_GEN_FIFO_SPI_MODE_SINGLE
 					 << GQSPI_GEN_FIFO_SPI_MODE_SHIFT;
