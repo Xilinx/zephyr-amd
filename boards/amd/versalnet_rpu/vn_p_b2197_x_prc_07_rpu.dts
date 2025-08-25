@@ -24,3 +24,24 @@
 		t-exit-dpd = <35000>;
 	};
 };
+
+&ospi0 {
+	size = <DT_SIZE_M(2048)>;
+	status = "okay";
+	cdns,tslch-ns = <1>;
+	cdns,tchsh-ns = <1>;
+	cdns,tsd2d-ns = <0>;
+	cdns,tshsl-ns = <0>;
+	cdns,read-delay = <0>;
+	clock-frequency = <20000000>;
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		storage_partition: partition@0 {
+			label = "storage";
+			reg = <0x00000000 0x20000>;
+		};
+	};
+};
