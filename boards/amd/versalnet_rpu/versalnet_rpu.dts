@@ -46,7 +46,7 @@
 		#clock-cells = <0> ;
 	};
 
-	adma_ref_clk: adma_ref_clk {
+	adma_ref_clk: adma-ref-clk {
 		compatible = "fixed-clock";
 		#clock-cells = <0>;
 		clock-frequency = <450000000>;
