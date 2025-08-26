@@ -29,6 +29,7 @@ zephyr_library_sources_ifdef(CONFIG_CAN_NRF          can_nrf.c)
 zephyr_library_sources_ifdef(CONFIG_USERSPACE        can_handlers.c)
 zephyr_library_sources_ifdef(CONFIG_CAN_SHELL        can_shell.c)
 zephyr_library_sources_ifdef(CONFIG_CAN_NXP_S32_CANXL    can_nxp_s32_canxl.c)
+zephyr_library_sources_ifdef(CONFIG_CAN_XILINX_CANFD     can_xilinx_canfd.c)
 
 if(CONFIG_CAN_NATIVE_LINUX)
   if(${CMAKE_HOST_SYSTEM_NAME} STREQUAL Linux)
