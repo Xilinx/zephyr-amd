@@ -113,6 +113,17 @@
 			};
 		};
 
+		ospi0: qspi@f1010000 {
+			compatible = "xlnx,versal-ospi-1.0";
+			status = "disabled";
+			reg = <0xf1010000 0x10000>,
+			      <0xc0000000 0x20000000>;
+			reg-names = "qspi_reg", "qspi_data";
+			interrupts = <GIC_SPI 182 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+			cdns,fifo-depth = <256>;
+			cdns,fifo-width = <4>;
+		};
+
 		spi0: spi@f1960000 {
 			compatible = "cdns,spi-r1p6";
 			status = "disabled";
