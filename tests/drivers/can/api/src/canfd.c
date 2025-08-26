@@ -10,6 +10,7 @@
 
 #include "common.h"
 
+#ifndef CONFIG_CAN_XILINX_CANFD
 /**
  * @addtogroup t_can_driver
  * @{
@@ -120,6 +121,7 @@ static void send_test_frame_nowait(const struct device *dev, const struct can_fr
 	zassert_not_equal(err, -EBUSY, "arbitration lost in loopback mode");
 	zassert_equal(err, 0, "failed to send frame (err %d)", err);
 }
+#endif
 
 /**
  * @brief Add a CAN message queue with asserts.
@@ -164,6 +166,7 @@ static inline int add_rx_filter(const struct device *dev,
 	return filter_id;
 }
 
+#ifndef CONFIG_CAN_XILINX_CANFD
 /**
  * @brief Perform a send/receive test with a set of CAN ID filters and CAN frames.
  *
@@ -223,6 +226,7 @@ static void send_receive(const struct can_filter *filter1,
 	can_remove_rx_filter(can_dev, filter_id_1);
 	can_remove_rx_filter(can_dev, filter_id_2);
 }
+#endif
 
 /**
  * @brief Test getting the CAN controller capabilities.
@@ -238,6 +242,7 @@ ZTEST(canfd, test_canfd_get_capabilities)
 			  "CAN FD loopback mode not supported");
 }
 
+#ifndef CONFIG_CAN_XILINX_CANFD
 /**
  * @brief Test send/receive with standard (11-bit) CAN IDs and classic CAN frames.
  */
@@ -374,6 +379,7 @@ ZTEST_USER(canfd, test_filters_preserved_through_fd_to_classic_mode_change)
 {
 	check_filters_preserved_between_modes(CAN_MODE_FD, CAN_MODE_NORMAL);
 }
+#endif
 
 /**
  * @brief Test that the minimum timing values for the data phase can be set.
