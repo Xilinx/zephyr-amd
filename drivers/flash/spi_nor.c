@@ -396,6 +396,9 @@ static int spi_nor_access(const struct device *const dev,
 	bool is_addressed = (access & NOR_ACCESS_ADDRESSED) != 0U;
 	bool is_write = (access & NOR_ACCESS_WRITE) != 0U;
 	bool has_dummy = (access & NOR_ACCESS_DUMMY_BYTE) != 0U;
+	bool is_extended_spi = (cfg->spi_tx_bus_width & SPI_MODE_MASK) ||
+		(cfg->spi_rx_bus_width & SPI_MODE_MASK);
+
 	uint8_t buf[6] = { 0 };
 
 	struct spi_buf spi_buf_tx[2];
@@ -409,8 +412,8 @@ static int spi_nor_access(const struct device *const dev,
 	};
 
 	spi_buf_tx[1] = (struct spi_buf){
-		.buf = is_write ? data : NULL,
-		.len = is_write ? length : 0,
+		.buf = is_extended_spi ? (is_write ? data : NULL) : data,
+		.len = is_extended_spi ? (is_write ? length : 0) : length,
 		.bus_width = BUS_WIDTH_SPI,
 	};
 
@@ -491,7 +494,10 @@ static int spi_nor_access(const struct device *const dev,
 		return spi_write_dt(&cfg->spi, &tx_set);
 	}
 
-	return spi_transceive_dt(&cfg->spi, &tx_set, &rx_set);
+	if (is_extended_spi)
+		return spi_transceive_dt(&cfg->spi, &tx_set, &rx_set);
+
+	return spi_transceive_dt(&cfg->spi, &tx_set, &tx_set);
 }
 
 #define spi_nor_cmd_read(dev, opcode, dest, length) \
