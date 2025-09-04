@@ -378,6 +378,8 @@ static int spi_nor_access(const struct device *const dev,
 	struct spi_nor_data *const driver_data = dev->data;
 	bool is_addressed = (access & NOR_ACCESS_ADDRESSED) != 0U;
 	bool is_write = (access & NOR_ACCESS_WRITE) != 0U;
+	bool is_extended_spi = (driver_cfg->spi_tx_bus_width & SPI_MODE_MASK) ||
+		(driver_cfg->spi_rx_bus_width & SPI_MODE_MASK);
 	uint8_t buf[5] = { 0 };
 
 	struct spi_buf tx_spi_buf[2];
@@ -399,8 +401,8 @@ static int spi_nor_access(const struct device *const dev,
 	};
 
 	tx_spi_buf[1] = (struct spi_buf){
-		.buf = is_write ? data : NULL,
-		.len = is_write ? length : 0,
+		.buf = is_extended_spi ? (is_write ? data : NULL) : data,
+		.len = is_extended_spi ? (is_write ? length : 0) : length,
 		.bus_width = BUS_WIDTH_SPI,
 	};
 
@@ -465,7 +467,10 @@ static int spi_nor_access(const struct device *const dev,
 		return spi_write_dt(&driver_cfg->spi, &tx_set);
 	}
 
-	return spi_transceive_dt(&driver_cfg->spi, &tx_set, &rx_set);
+	if (is_extended_spi)
+		return spi_transceive_dt(&driver_cfg->spi, &tx_set, &rx_set);
+
+	return spi_transceive_dt(&driver_cfg->spi, &tx_set, &tx_set);
 }
 
 #define spi_nor_cmd_read(dev, opcode, dest, length) \
