@@ -625,7 +625,7 @@ static int flash_cad_read(const struct device *dev, off_t offset,
 	struct cad_qspi_params *cad_params = &priv->params;
 	int rc;
 
-	if (!data && len == 0) {
+	if (data && len == 0) {
 		return 0;
 	} else if (!data || len == 0) {
 		LOG_ERR("Invalid input parameter for QSPI Read!");
