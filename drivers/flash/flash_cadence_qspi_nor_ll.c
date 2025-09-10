@@ -578,9 +578,6 @@ int cad_qspi_int_disable(struct cad_qspi_params *cad_params, uint32_t mask)
 	if (cad_qspi_idle(cad_params) == 0)
 		return -1;
 
-	if ((CAD_QSPI_INT_STATUS_ALL & mask) == 0)
-		return -1;
-
 	sys_write32(mask, cad_params->reg_base + CAD_QSPI_IRQMSK);
 	return 0;
 }
