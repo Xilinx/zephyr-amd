@@ -382,7 +382,7 @@ int flash_ospi_read(struct cad_qspi_params *cad_params, void *buffer,
 
 	sys_write32(CAD_QSPI_IRQMASK, cad_params->reg_base + CAD_QSPI_IRQSTATUS);
 
-	status = cad_qspi_int_disable(cad_params, CAD_QSPI_IRQMSK);
+	status = cad_qspi_int_disable(cad_params, CAD_QSPI_IRQMSKVAL);
 	if (status != 0)
 		goto err;
 
