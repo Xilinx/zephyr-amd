@@ -119,7 +119,7 @@
 #define CAD_QSPI_DEV_DATA_TYPE(x)		(FIELD_GET(0x03, (x)) << 16)
 #define CAD_QSPI_DEV_MODE_BIT(x)		(FIELD_GET(0x01, (x)) << 20)
 #define CAD_QSPI_DEV_DDR_EN(x)			(FIELD_GET(0x01, (x)) << 10)
-#define CAD_QSPI_DEV_DUMMY_CLK_CYCLE(x)		(FIELD_GET(0x0f, (x)) << 24)
+#define CAD_QSPI_DEV_DUMMY_CLK_CYCLE(x)		(FIELD_GET(0x1f, (x)) << 24)
 #define CAD_QSPI_DEV_RD_INSTR_FLD_MASK		0x300
 
 #define CAD_QSPI_FLASHCMD			0x90
