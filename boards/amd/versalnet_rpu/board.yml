@@ -3,13 +3,3 @@ boards:
     vendor: amd
     socs:
       - name: amd_versalnet_rpu
-
-  - name: vn_p_b2197_x_prc_07_rpu
-    vendor: amd
-    socs:
-      - name: amd_versalnet_rpu
-
-  - name: vn_p_b2197_x_prc_09_rpu
-    vendor: amd
-    socs:
-      - name: amd_versalnet_rpu
