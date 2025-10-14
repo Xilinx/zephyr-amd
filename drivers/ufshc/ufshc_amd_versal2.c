@@ -45,6 +45,7 @@ LOG_MODULE_REGISTER(ufshc_amd_versal2, CONFIG_UFSHC_LOG_LEVEL);
 #define CBREFCLKCTRL2					0x8132
 #define CBCRCTRL					0x811F
 #define CBC10DIRECTCONF2				0x810E
+#define CBRATESEL					0x8114
 #define CBCREGADDRLSB					0x8116
 #define CBCREGADDRMSB					0x8117
 #define CBCREGWRLSB					0x8118
@@ -64,6 +65,8 @@ LOG_MODULE_REGISTER(ufshc_amd_versal2, CONFIG_UFSHC_LOG_LEVEL);
 #define VERSAL2_UFS_LS_BURST_STATE			0x4U
 
 /* M-PHY registers */
+#define RX_OVRD_IN_1(n)				(0x3006 + ((n) * 0x100))
+#define RX_PCS_OUT(n)				(0x300F + ((n) * 0x100))
 #define FAST_FLAGS(n)				(0x401C + ((n) * 0x100))
 #define RX_AFE_ATT_IDAC(n)			(0x4000 + ((n) * 0x100))
 #define RX_AFE_CTLE_IDAC(n)			(0x4001 + ((n) * 0x100))
@@ -71,6 +74,10 @@ LOG_MODULE_REGISTER(ufshc_amd_versal2, CONFIG_UFSHC_LOG_LEVEL);
 
 #define MPHY_FAST_RX_AFE_CAL				BIT(2)
 #define MPHY_FW_CALIB_CFG_VAL				BIT(8)
+
+#define MPHY_RX_OVRD_EN					BIT(3)
+#define MPHY_RX_OVRD_VAL				BIT(2)
+#define MPHY_RX_ACK_MASK				BIT(0)
 
 /**
  * @brief Configuration for the Versal Gen2 UFS Host Controller.
@@ -713,6 +720,193 @@ out:
 }
 
 /**
+ * @brief Override the PHY RX request for each connected lane.
+ *
+ * This function modifies the PHY RX override settings
+ * It enables the PHY RX override and sets or clears the override value based on input.
+ * It polls for an acknowledgment from the PHY for each lane.
+ *
+ * @param ufshc Pointer to the UFS host controller structure.
+ * @param rxreq RX request value to set (non-zero for enable, zero for disable).
+ * @param numlanes The number of lanes to be configured.
+ *
+ * @return 0 on success, negative error code on failure
+ */
+static int32_t ufshc_versal2_OverridePhyRxReq(struct ufs_host_controller *ufshc, uint32_t rxreq,
+					      uint32_t numlanes)
+{
+	struct ufshc_uic_cmd uic_cmd = {0};
+	int32_t ret = -EINVAL;
+	uint32_t timeleft;
+	uint32_t read_reg;
+	uint32_t lane;
+
+	/* Override PHY rx_req for each connected lane */
+	for (lane = 0U; lane < numlanes; lane++) {
+		ret = ufshc_versal2_read_phy_reg(ufshc, &uic_cmd, RX_OVRD_IN_1(lane), &read_reg);
+		if (ret != 0) {
+			goto out;
+		}
+
+		read_reg |= MPHY_RX_OVRD_EN; /* Enable PHY RX Override */
+		if (rxreq) {
+			read_reg |= MPHY_RX_OVRD_VAL;
+		} else {
+			read_reg &= ~MPHY_RX_OVRD_VAL;
+		}
+
+		ret = ufshc_versal2_write_phy_reg(ufshc, &uic_cmd, RX_OVRD_IN_1(lane), read_reg);
+		if (ret != 0) {
+			goto out;
+		}
+
+		/* Poll PHY rx_ack for the current connected lane */
+		timeleft = UFS_TIMEOUT_US;
+		do {
+			ret = ufshc_versal2_read_phy_reg(ufshc, &uic_cmd, RX_PCS_OUT(lane), &read_reg);
+			if (ret != 0) {
+				goto out;
+			}
+
+			/* check MPHY_RX_ACK_MASK */
+			if ((read_reg & MPHY_RX_ACK_MASK) == rxreq) {
+				break;
+			}
+
+			k_usleep(1);
+			timeleft--;
+		} while (timeleft != 0U);
+
+		if (timeleft == 0U) {
+			LOG_ERR("MPHY Rx Ack timeout on lane %u", lane);
+			ret = -ETIMEDOUT;
+			goto out;
+		}
+	}
+
+out:
+	return ret;
+}
+
+/**
+ * @brief Notify power mode change for the UFS Host Controller on Versal Gen2.
+ *
+ * This function processes power change notifications on Versal Gen2 UFS
+ * Configures RMMI registers for High Speed Operation
+ * It switches to slow PWM speed mode, if not calibrated part
+ *
+ * @param dev The device pointer to the UFS Host Controller device.
+ * @param status The status of the power mode change, either PRE or POST.
+ * @param desired_pwr_mode Desired Power Mode
+ * @param final_pwr_mode Final Power Mode
+ *
+ * @return 0 on success, negative error code on failure.
+ */
+static int32_t ufshc_versal2_pwr_change_notify(const struct device *dev, uint8_t status,
+					struct ufs_pwr_mode_info *desired_pwr_mode,
+					struct ufs_pwr_mode_info *final_pwr_mode)
+{
+	struct ufshc_versal2_data *drvdata = dev->data;
+	struct ufs_host_controller *ufshc = &drvdata->ufshc;
+	struct ufshc_uic_cmd uic_cmd = {0};
+	uint32_t read_reg = 0U;
+	uint32_t adapt_val;
+	uint32_t rxlanes;
+	uint32_t ratesel;
+	uint32_t lane;
+	int32_t err;
+
+	if (status != (uint8_t)PRE_CHANGE) {
+		/* Only PRE_CHANGE handling implemented here */
+		return 0;
+	}
+
+	/* Set requested speed gear to the maximum allowed by default */
+	memcpy(final_pwr_mode, desired_pwr_mode, sizeof(struct ufs_pwr_mode_info));
+
+	/* if it is not calibrated part, switch PWRMODE to SLOW_MODE */
+	if ((drvdata->rx_att_comp_val_l0 == (uint32_t)0x0U) &&
+	    (drvdata->rx_att_comp_val_l1 == (uint32_t)0x0U) &&
+	    (drvdata->rx_ctle_comp_val_l0 == (uint32_t)0x0U) &&
+	    (drvdata->rx_ctle_comp_val_l1 == (uint32_t)0x0U)) {
+		final_pwr_mode->pwr_rx = SLOW_MODE;
+		final_pwr_mode->pwr_tx = SLOW_MODE;
+		LOG_DBG("Uncalibrated device - forcing slow mode");
+		return 0;
+	}
+
+	if (((final_pwr_mode->pwr_rx) == SLOW_MODE) ||
+	    ((final_pwr_mode->pwr_rx) == SLOWAUTO_MODE)) {
+		return 0;
+	}
+
+	if ((final_pwr_mode->hs_rate) == PA_HS_MODE_B) {
+		ratesel = 1U;
+	} else {
+		ratesel = 0U;
+	}
+
+	/* Program CBRATESEL */
+	ufshc_fill_uic_cmd(&uic_cmd, ((uint32_t)CBRATESEL << 16U), ratesel, 0U,
+			   (uint32_t)UFSHC_DME_SET_OPCODE);
+	err = ufshc_send_uic_cmd(ufshc, &uic_cmd);
+	if (err != 0) {
+		goto out;
+	}
+
+	/* Trigger MPHY config update */
+	ufshc_fill_uic_cmd(&uic_cmd, ((uint32_t)VS_MPHYCFGUPDT << 16U), 1U, 0U,
+			   (uint32_t)UFSHC_DME_SET_OPCODE);
+	err = ufshc_send_uic_cmd(ufshc, &uic_cmd);
+	if (err != 0) {
+		goto out;
+	}
+
+	/* Override PHY rx_req to 1 */
+	rxlanes = final_pwr_mode->lane_rx;
+	err = ufshc_versal2_OverridePhyRxReq(ufshc, 1U, rxlanes);
+	if (err != 0) {
+		goto out;
+	}
+
+	/* Override PHY rx_req to 0 */
+	err = ufshc_versal2_OverridePhyRxReq(ufshc, 0U, rxlanes);
+	if (err != 0) {
+		goto out;
+	}
+
+	/* Remove PHY rx_req override (Connected lanes) */
+	for (lane = 0U; lane < rxlanes; lane++) {
+		err = ufshc_versal2_read_phy_reg(ufshc, &uic_cmd, RX_OVRD_IN_1(lane), &read_reg);
+		if (err != 0) {
+			goto out;
+		}
+
+		read_reg &= ~(MPHY_RX_OVRD_EN); /* Clear MPHY_RX_OVRD_EN */
+		err = ufshc_versal2_write_phy_reg(ufshc, &uic_cmd, RX_OVRD_IN_1(lane), read_reg);
+		if (err != 0) {
+			goto out;
+		}
+	}
+
+	/* For G4 on two lanes, set TXHSADAPTTYPE=1 as initial ADAPT */
+	if (((final_pwr_mode->lane_tx) == UFS_LANE_2) &&
+	    ((final_pwr_mode->lane_rx) == UFS_LANE_2)) {
+		if (final_pwr_mode->gear_rx == UFS_HS_G4) {
+			adapt_val = PA_INITIAL_ADAPT;
+		} else {
+			adapt_val = PA_NO_ADAPT;
+		}
+		ufshc_fill_uic_cmd(&uic_cmd, ((uint32_t)PA_TXHSADAPTTYPE << 16U), adapt_val, 0U,
+				   (uint32_t)UFSHC_DME_SET_OPCODE);
+		err = ufshc_send_uic_cmd(ufshc, &uic_cmd);
+	}
+
+out:
+	return err;
+}
+
+/**
  * @brief Performs device instance init for Versal Gen2 UFS controller
  *
  * This function initializes the UFS controller instance by setting up
@@ -755,6 +949,7 @@ static int32_t ufshc_versal2_init(const struct device *dev)
 static const struct ufshc_driver_api ufshc_versal2_api = {
 	.phy_initialization = ufshc_versal2_phy_init,
 	.link_startup_notify = ufshc_versal2_link_startup_notify,
+	.pwr_change_notify = ufshc_versal2_pwr_change_notify,
 };
 
 /**
