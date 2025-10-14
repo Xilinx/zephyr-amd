@@ -791,36 +791,40 @@ out:
 /**
  * @brief Change UFS TX/RX Mphy attributes
  *
- * @param ufshc: Pointer to the UFS host controller instance.
- * @param speed_gear The desired speed gear value for the configuration.
- * @param rx_term_cap The RX termination capability to be set.
- * @param tx_term_cap The TX termination capability to be set.
+ * @param ufshc Pointer to the UFS host controller instance.
+ * @param pwr_mode Desired Power Mode (Speed Gear) configuration.
  *
  * @return 0 on success, negative error code on failure
  */
 static int32_t ufshc_configure_TxRxAttributes(struct ufs_host_controller *ufshc,
-	uint32_t speed_gear, uint32_t rx_term_cap, uint32_t tx_term_cap)
+	struct ufs_pwr_mode_info *pwr_mode)
 {
 	struct ufshc_uic_cmd uic_cmd = {0};
-	int32_t ret;
-	uint32_t tx_gear, rx_gear;
+	uint32_t tx_term_cap, rx_term_cap;
 	uint32_t tx_lanes, rx_lanes;
+	uint32_t tx_gear, rx_gear;
 	uint32_t power_mode, rate;
+	int32_t ret;
 
-	/* Extracting speed gear components */
-	tx_gear = (uint8_t)speed_gear;
-	rx_gear = (uint8_t)speed_gear;
-	power_mode = (uint8_t)(speed_gear >> 8U);
-	rate = (uint8_t)(speed_gear >> 16U);
+	/* Extracting power mode components */
+	tx_gear = pwr_mode->gear_tx;
+	rx_gear = pwr_mode->gear_rx;
+	tx_lanes = pwr_mode->lane_tx;
+	rx_lanes = pwr_mode->lane_rx;
+	rate = pwr_mode->hs_rate;
+	power_mode = (pwr_mode->pwr_rx << 4U) | (pwr_mode->pwr_tx);
 
-	/* Configure TX Gear */
-	ufshc_fill_uic_cmd(&uic_cmd,
-			   ((uint32_t)PA_TXGEAR << 16U),
-			   tx_gear, 0U,
-			   UFSHC_DME_SET_OPCODE);
-	ret = ufshc_send_uic_cmd(ufshc, &uic_cmd);
-	if (ret != 0) {
-		goto out;
+	/* Set termination capabilities based on speed gear type */
+	if (pwr_mode->pwr_rx == FAST_MODE) {
+		rx_term_cap = 1U;
+	} else {
+		rx_term_cap = 0U;
+	}
+
+	if (pwr_mode->pwr_tx == FAST_MODE) {
+		tx_term_cap = 1U;
+	} else {
+		tx_term_cap = 0U;
 	}
 
 	/* Configure RX Gear */
@@ -833,10 +837,10 @@ static int32_t ufshc_configure_TxRxAttributes(struct ufs_host_controller *ufshc,
 		goto out;
 	}
 
-	/* Configure TX Termination capability */
+	/* Configure the active RX data lanes */
 	ufshc_fill_uic_cmd(&uic_cmd,
-			   ((uint32_t)PA_TXTERMINATION << 16U),
-			   tx_term_cap, 0U,
+			   ((uint32_t)PA_ACTIVERXDATALANES << 16U),
+			   rx_lanes, 0U,
 			   UFSHC_DME_SET_OPCODE);
 	ret = ufshc_send_uic_cmd(ufshc, &uic_cmd);
 	if (ret != 0) {
@@ -853,52 +857,15 @@ static int32_t ufshc_configure_TxRxAttributes(struct ufs_host_controller *ufshc,
 		goto out;
 	}
 
-	/* Check for high-speed configuration (Fast Mode) */
-	if (power_mode == UFSHC_TX_RX_FAST) {
-		/* Configure High-Speed Series based on rate */
-		ufshc_fill_uic_cmd(&uic_cmd,
-				   ((uint32_t)PA_HSSERIES << 16U),
-				   rate, 0U,
-				   UFSHC_DME_SET_OPCODE);
-		ret = ufshc_send_uic_cmd(ufshc, &uic_cmd);
-		if (ret != 0) {
-			goto out;
-		}
-
-		/* Program initial ADAPT for Gear 4 */
-		if (tx_gear == UFSHC_GEAR4) {
-			ufshc_fill_uic_cmd(&uic_cmd,
-					   ((uint32_t)PA_TXHSADAPTTYPE << 16U),
-					   1U, 0U,
-					   UFSHC_DME_SET_OPCODE);
-			ret = ufshc_send_uic_cmd(ufshc, &uic_cmd);
-			if (ret != 0) {
-				goto out;
-			}
-		}
-	}
-
-	/* Retrieve and configure the active TX data lanes */
+	/* Configure TX Gear */
 	ufshc_fill_uic_cmd(&uic_cmd,
-			   ((uint32_t)PA_CONNECTEDTXDATALANES << 16U),
-			   0U, 0U,
-			   UFSHC_DME_GET_OPCODE);
+			   ((uint32_t)PA_TXGEAR << 16U),
+			   tx_gear, 0U,
+			   UFSHC_DME_SET_OPCODE);
 	ret = ufshc_send_uic_cmd(ufshc, &uic_cmd);
 	if (ret != 0) {
 		goto out;
 	}
-	tx_lanes = uic_cmd.mib_value;
-
-	/* Retrieve and configure the active RX data lanes */
-	ufshc_fill_uic_cmd(&uic_cmd,
-			   ((uint32_t)PA_CONNECTEDRXDATALANES << 16U),
-			   0U, 0U,
-			   UFSHC_DME_GET_OPCODE);
-	ret = ufshc_send_uic_cmd(ufshc, &uic_cmd);
-	if (ret != 0) {
-		goto out;
-	}
-	rx_lanes = uic_cmd.mib_value;
 
 	/* Configure the active TX data lanes */
 	ufshc_fill_uic_cmd(&uic_cmd,
@@ -910,14 +877,27 @@ static int32_t ufshc_configure_TxRxAttributes(struct ufs_host_controller *ufshc,
 		goto out;
 	}
 
-	/* Configure the active RX data lanes */
+	/* Configure TX Termination capability */
 	ufshc_fill_uic_cmd(&uic_cmd,
-			   ((uint32_t)PA_ACTIVERXDATALANES << 16U),
-			   rx_lanes, 0U,
+			   ((uint32_t)PA_TXTERMINATION << 16U),
+			   tx_term_cap, 0U,
 			   UFSHC_DME_SET_OPCODE);
 	ret = ufshc_send_uic_cmd(ufshc, &uic_cmd);
 	if (ret != 0) {
 		goto out;
+	}
+
+	/* Check for high-speed configuration (Fast Mode) */
+	if ((pwr_mode->pwr_rx == FAST_MODE) || (pwr_mode->pwr_tx == FAST_MODE)) {
+		/* Configure High-Speed Series based on rate */
+		ufshc_fill_uic_cmd(&uic_cmd,
+				   ((uint32_t)PA_HSSERIES << 16U),
+				   rate, 0U,
+				   UFSHC_DME_SET_OPCODE);
+		ret = ufshc_send_uic_cmd(ufshc, &uic_cmd);
+		if (ret != 0) {
+			goto out;
+		}
 	}
 
 	/* Set the power mode */
@@ -938,49 +918,24 @@ out:
  * attributes (such as termination capabilities)
  *
  * @param ufshc Pointer to the UFS host controller structure
- * @param speed_gear Desired speed gear setting
+ * @param pwr_mode Desired power mode configuration
  *
  * @return 0 on success, negative error code on failure
  */
-int32_t ufshc_configure_speedgear(struct ufs_host_controller *ufshc, uint32_t speed_gear)
+static int32_t ufshc_configure_speed_gear(struct ufs_host_controller *ufshc,
+				struct ufs_pwr_mode_info *pwr_mode)
 {
-	int32_t ret = 0;
-	uint32_t tx_term_cap;
-	uint32_t rx_term_cap;
+	int32_t ret;
 	uint32_t time_out;
 	uint32_t event_status;
 	uint32_t events;
 	k_timeout_t timeout_event;
 
-	/* Validate the requested speed gear */
-	if ((speed_gear != UFSHC_PWM_G1) && (speed_gear != UFSHC_PWM_G2) &&
-	    (speed_gear != UFSHC_PWM_G3) && (speed_gear != UFSHC_PWM_G4) &&
-	    (speed_gear != UFSHC_HS_G1) && (speed_gear != UFSHC_HS_G2) &&
-	    (speed_gear != UFSHC_HS_G3) && (speed_gear != UFSHC_HS_G4) &&
-	    (speed_gear != UFSHC_HS_G1_B) && (speed_gear != UFSHC_HS_G2_B) &&
-	    (speed_gear != UFSHC_HS_G3_B) && (speed_gear != UFSHC_HS_G4_B)) {
-		ret = -EINVAL;
-		goto out;
-	}
-
-	/* Set termination capabilities based on speed gear type */
-	if ((speed_gear == UFSHC_PWM_G1) || (speed_gear == UFSHC_PWM_G2) ||
-	    (speed_gear == UFSHC_PWM_G3) || (speed_gear == UFSHC_PWM_G4)) {
-		/* Pulse Width Modulation (PWM) gears require termination */
-		tx_term_cap = 1U;
-		rx_term_cap = 1U;
-	} else {
-		/* High-Speed gears do not require termination */
-		tx_term_cap = 0U;
-		rx_term_cap = 0U;
-	}
-
 	/* Clear previous UIC power event flag */
 	(void)k_event_clear(&ufshc->irq_event, (uint32_t)UFS_UIC_PWR_COMPLETION_EVENT);
 
-	/* Configure the tx and rx attributes for the selected speed gear */
-	ret = ufshc_configure_TxRxAttributes(ufshc, speed_gear,
-					     rx_term_cap, tx_term_cap);
+	/* Configure the tx and rx attributes for the selected power mode */
+	ret = ufshc_configure_TxRxAttributes(ufshc, pwr_mode);
 	if (ret != 0) {
 		goto out;
 	}
@@ -1379,6 +1334,22 @@ static inline bool ufshc_is_device_present(struct ufs_host_controller *ufshc)
 }
 
 /**
+ * @brief Setting the link startup values in host controller power info
+ *
+ * @param ufshc ufs-host-controller instance
+ */
+static void ufshc_init_pwr_info(struct ufs_host_controller *ufshc)
+{
+	ufshc->pwr_info.gear_rx = UFS_PWM_G1;
+	ufshc->pwr_info.gear_tx = UFS_PWM_G1;
+	ufshc->pwr_info.lane_rx = 1;
+	ufshc->pwr_info.lane_tx = 1;
+	ufshc->pwr_info.pwr_rx = SLOW_MODE;
+	ufshc->pwr_info.pwr_tx = SLOW_MODE;
+	ufshc->pwr_info.hs_rate = 0;
+}
+
+/**
  * @brief Initialize the Unipro link startup procedure
  *
  * This function performs the link startup procedure for the UFS host controller.
@@ -1442,6 +1413,9 @@ static int32_t ufshc_link_startup(struct ufs_host_controller *ufshc)
 	if (ret != 0) {
 		goto out;
 	}
+
+	/* Mark link is up in PWM-G1 */
+	ufshc_init_pwr_info(ufshc);
 
 out:
 	return ret;
@@ -1708,6 +1682,164 @@ out:
 }
 
 /**
+ * @brief Retrieves the maximum power mode for the UFS host controller.
+ *
+ * This function checks the maximum supported speed mode by Host Controller
+ *
+ * @param ufshc Pointer to the UFS host controller structure.
+ * @param max_pwr_info Pointer to store the maximum power mode information
+ *
+ * @return 0 on success, or a negative error code on failure.
+ */
+static int32_t ufshc_get_max_pwr_mode(struct ufs_host_controller *ufshc,
+				struct ufs_pwr_mode_info *max_pwr_info)
+{
+	struct ufshc_uic_cmd uic_cmd = {0};
+	uint32_t max_pwm_gear;
+	uint32_t max_hs_gear;
+	int32_t ret;
+
+	/* Get the connected TX data lanes */
+	ufshc_fill_uic_cmd(&uic_cmd,
+			   ((uint32_t)PA_CONNECTEDTXDATALANES << 16U),
+			   0U, 0U,
+			   UFSHC_DME_GET_OPCODE);
+	ret = ufshc_send_uic_cmd(ufshc, &uic_cmd);
+	if (ret != 0) {
+		goto out;
+	}
+	max_pwr_info->lane_tx = uic_cmd.mib_value;
+
+	/* Get the connected RX data lanes */
+	ufshc_fill_uic_cmd(&uic_cmd,
+			   ((uint32_t)PA_CONNECTEDRXDATALANES << 16U),
+			   0U, 0U,
+			   UFSHC_DME_GET_OPCODE);
+	ret = ufshc_send_uic_cmd(ufshc, &uic_cmd);
+	if (ret != 0) {
+		goto out;
+	}
+	max_pwr_info->lane_rx = uic_cmd.mib_value;
+
+	/*
+	 * First, get the maximum gears of HS speed.
+	 * If a zero value, it means there is no HSGEAR capability.
+	 * Then, get the maximum gears of PWM speed.
+	 */
+	ufshc_fill_uic_cmd(&uic_cmd,
+			   ((uint32_t)PA_MAXRXHSGEAR << 16U),
+			   0U, 0U,
+			   UFSHC_DME_GET_OPCODE);
+	ret = ufshc_send_uic_cmd(ufshc, &uic_cmd);
+	if (ret != 0) {
+		goto out;
+	}
+	max_hs_gear = uic_cmd.mib_value;
+
+	if (max_hs_gear == 0U) {
+		/* Get maximum gears of PWM speed */
+		ufshc_fill_uic_cmd(&uic_cmd,
+				   ((uint32_t)PA_MAXRXPWMGEAR << 16U),
+				   0U, 0U,
+				   UFSHC_DME_GET_OPCODE);
+		ret = ufshc_send_uic_cmd(ufshc, &uic_cmd);
+		if (ret != 0) {
+			goto out;
+		}
+		max_pwm_gear = uic_cmd.mib_value;
+		max_pwr_info->hs_rate = 0;
+		max_pwr_info->pwr_rx = SLOW_MODE;
+		max_pwr_info->pwr_tx = SLOW_MODE;
+		max_pwr_info->gear_rx = max_pwm_gear;
+		max_pwr_info->gear_tx = max_pwm_gear;
+	} else {
+		max_pwr_info->hs_rate = PA_HS_MODE_B;
+		max_pwr_info->pwr_rx = FAST_MODE;
+		max_pwr_info->pwr_tx = FAST_MODE;
+		max_pwr_info->gear_rx = max_hs_gear;
+		max_pwr_info->gear_tx = max_hs_gear;
+	}
+
+out:
+	return ret;
+}
+
+/**
+ * @brief Configures the power mode of the UFS host controller.
+ *
+ * Notifies the driver variant before and after changing the power mode,
+ * and configures the host controller's power mode accordingly.
+ *
+ * @param ufshc Pointer to the UFS host controller structure.
+ * @param desired_pwr_mode The desired power mode to be set.
+ *
+ * @return 0 on success, non-zero error code on failure.
+ */
+int32_t ufshc_config_pwr_mode(struct ufs_host_controller *ufshc,
+			struct ufs_pwr_mode_info *desired_pwr_mode)
+{
+	struct ufs_pwr_mode_info final_pwr_mode = {0};
+	int32_t ret;
+
+	/* if already configured to requested pwr_mode */
+	if ((ufshc->pwr_info.gear_rx == desired_pwr_mode->gear_rx) &&
+	    (ufshc->pwr_info.gear_tx == desired_pwr_mode->gear_tx) &&
+	    (ufshc->pwr_info.lane_rx == desired_pwr_mode->lane_rx) &&
+	    (ufshc->pwr_info.lane_tx == desired_pwr_mode->lane_tx) &&
+	    (ufshc->pwr_info.pwr_rx == desired_pwr_mode->pwr_rx) &&
+	    (ufshc->pwr_info.pwr_tx == desired_pwr_mode->pwr_tx) &&
+	    (ufshc->pwr_info.hs_rate == desired_pwr_mode->hs_rate)) {
+		LOG_DBG("Already in requested power mode");
+		return 0;
+	}
+
+	/* Notify driver variant about power mode change */
+	memcpy(&final_pwr_mode, desired_pwr_mode, sizeof(final_pwr_mode));
+	ufshc_variant_pwr_change_notify(ufshc->dev, PRE_CHANGE, desired_pwr_mode,
+					&final_pwr_mode);
+
+	ret = ufshc_configure_speed_gear(ufshc, &final_pwr_mode);
+
+	if (ret == 0) {
+		ufshc_variant_pwr_change_notify(ufshc->dev, POST_CHANGE, NULL, &final_pwr_mode);
+
+		/* Copy new Power Mode to controller power info */
+		memcpy(&ufshc->pwr_info, &final_pwr_mode, sizeof(struct ufs_pwr_mode_info));
+	} else {
+		LOG_ERR("Failed to change power mode, err = %d", ret);
+	}
+
+	return ret;
+}
+
+/**
+ * @brief Configures the UFS host controller to the maximum supported power mode.
+ *
+ * @param ufshc Pointer to the UFS host controller structure.
+ * @return 0 on success, or a negative error code on failure.
+ */
+static int32_t ufshc_configure_max_pwr_mode(struct ufs_host_controller *ufshc)
+{
+	int32_t ret;
+	struct ufs_pwr_mode_info max_pwr_info = {0};
+
+	/* Query maximum supported power mode */
+	ret = ufshc_get_max_pwr_mode(ufshc, &max_pwr_info);
+	if (ret != 0) {
+		LOG_ERR("Failed getting max supported power mode, err=%d", ret);
+		return ret;
+	}
+
+	/* Configure max power mode */
+	ret  = ufshc_config_pwr_mode(ufshc, &max_pwr_info);
+	if (ret != 0) {
+		LOG_ERR("Failed to set power mode, err = %d", ret);
+	}
+
+	return ret;
+}
+
+/**
  * @brief Retrieves information about UFS logical units (LUNs)
  *
  * This function queries the UFS Unit descriptor for each supported LUN to gather
@@ -1933,6 +2065,12 @@ static int32_t ufshc_init(struct ufs_host_controller *ufshc)
 	err = ufshc_get_lun_info(ufshc);
 	if (err != 0) {
 		LOG_ERR("Read LUN info failed");
+		goto out;
+	}
+
+	/* jump to max power mode */
+	err = ufshc_configure_max_pwr_mode(ufshc);
+	if (err != 0) {
 		goto out;
 	}
 
