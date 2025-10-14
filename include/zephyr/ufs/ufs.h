@@ -347,6 +347,19 @@ struct ufshc_xfer_cmd_desc {
 } __packed;
 
 /**
+ * @brief Structure to hold power mode information for UFS
+ */
+struct ufs_pwr_mode_info {
+	uint32_t gear_rx; /**< PWM or HS Gear Rate used for RX */
+	uint32_t gear_tx; /**< PWM or HS Gear Rate used for TX */
+	uint32_t lane_rx; /**< Lanes used for RX */
+	uint32_t lane_tx; /**< Lanes used for TX */
+	uint32_t pwr_rx;  /**< Power mode for RX */
+	uint32_t pwr_tx;  /**< Power mode for TX */
+	uint32_t hs_rate; /**< High-speed rate (A or B) */
+};
+
+/**
  * @brief UFS Device Information Structure
  */
 struct ufs_dev_info {
@@ -365,6 +378,7 @@ struct ufs_host_controller {
 	uint8_t is_cache_coherent; /**< UFS controller supports cache coherency. */
 	struct ufshc_xfer_cmd_desc *ucdl_base_addr; /**< UFS Command Desc base address */
 	struct ufshc_xfer_req_desc *utrdl_base_addr; /**< UTP Transfer Request Desc base address */
+	struct ufs_pwr_mode_info pwr_info; /**< UFS Power Mode Information */
 	uint32_t xfer_req_depth; /**< Maximum depth of the Transfer Request Queue supported */
 	uint32_t outstanding_xfer_reqs; /**< Outstanding transfer requests. */
 	struct k_event irq_event; /**< Event object used to signal interrupt handling. */
