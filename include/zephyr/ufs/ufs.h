@@ -141,34 +141,6 @@
 #define UFSHC_DD_DEV_TO_MEM_MASK	0x04000000U
 #define UFSHC_DD_MEM_TO_DEV_MASK	0x02000000U
 
-/* Speed Gears */
-
-/* PWM */
-#define UFSHC_PWM_G1	0x2201U
-#define UFSHC_PWM_G2	0x2202U
-#define UFSHC_PWM_G3	0x2203U
-#define UFSHC_PWM_G4	0x2204U
-
-/* HS RATE-A */
-#define UFSHC_HS_G1	0x11101U
-#define UFSHC_HS_G2	0x11102U
-#define UFSHC_HS_G3	0x11103U
-#define UFSHC_HS_G4	0x11104U
-
-/* HS RATE-B */
-#define UFSHC_HS_G1_B	0x21101U
-#define UFSHC_HS_G2_B	0x21102U
-#define UFSHC_HS_G3_B	0x21103U
-#define UFSHC_HS_G4_B	0x21104U
-
-#define UFSHC_TX_RX_FAST	0x11U
-#define UFSHC_TX_RX_SLOW	0x22U
-
-#define UFSHC_HSSERIES_A	1U
-#define UFSHC_HSSERIES_B	2U
-
-#define UFSHC_GEAR4		4U
-
 /* Power Mode change request status */
 #define UFSHC_PWR_OK		0U
 #define UFSHC_PWR_LOCAL		1U
@@ -549,17 +521,15 @@ int32_t ufshc_rw_flags(struct ufs_host_controller *ufshc, bool write,
 		       uint8_t idn, uint8_t index, void *data);
 
 /**
- * @brief Configure the UFS speed gear setting
- *
- * This function sets the UFS host controller's speed gear by configuring the tx and rx
- * attributes (such as termination capabilities)
+ * @brief Configures the power mode of the UFS host controller.
  *
  * @param ufshc Pointer to the UFS host controller structure
- * @param speed_gear Desired speed gear setting
+ * @param pwr_mode Desired power mode to set
  *
  * @return 0 on success, negative error code on failure
  */
-int32_t ufshc_configure_speedgear(struct ufs_host_controller *ufshc, uint32_t speed_gear);
+int32_t ufshc_config_pwr_mode(struct ufs_host_controller *ufshc,
+			struct ufs_pwr_mode_info *pwr_mode);
 
 /**
  * @}
