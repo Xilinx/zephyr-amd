@@ -9,6 +9,7 @@
 
 #include <errno.h>
 #include <zephyr/device.h>
+#include <zephyr/ufs/ufs.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -56,6 +57,26 @@ __subsystem struct ufshc_driver_api {
 	 *         -EIO: I/O error.
 	 */
 	int32_t (*link_startup_notify)(const struct device *dev, uint8_t status);
+
+	/**
+	 * @brief Power Mode change notification function for UFS Host Controller.
+	 *
+	 * This function notifies to set vendor specific capabilities during power mode change.
+	 *
+	 * @param dev The device pointer to the UFS Host Controller device.
+	 * @param status The status of the power mode change, either PRE or POST.
+	 * @param desired_pwr_mode Desired Power Mode
+	 * @param final_pwr_mode Final Power Mode
+	 *
+	 * @return 0 on success, negative errno value on failure.
+	 *        -ENOSYS: host controller does not support this operation.
+	 *        -ETIMEDOUT: command timed out during execution.
+	 *        -EIO: I/O error.
+	 */
+	int32_t (*pwr_change_notify)(const struct device *dev,
+				uint8_t status,
+				struct ufs_pwr_mode_info *desired_pwr_mode,
+				struct ufs_pwr_mode_info *final_pwr_mode);
 };
 
 /**
@@ -111,6 +132,41 @@ static inline int32_t z_impl_ufshc_variant_link_startup_notify(const struct devi
 	}
 
 	return api->link_startup_notify(dev, status);
+}
+
+/**
+ * @brief Power Mode change notification function for UFS Host Controller.
+ *
+ * This system call is used to carry out vendor specific capabilities to set
+ * before and after power mode change
+ *
+ * @param dev The device pointer to the UFS Host Controller device.
+ * @param status The status of the power mode change, either PRE or POST.
+ * @param desired_pwr_mode Desired Power Mode
+ * @param final_pwr_mode Final Power Mode
+ *
+ * @return 0 on success, negative errno value on failure.
+ *         -ENOSYS: host controller does not support this operation.
+ *         -ETIMEDOUT: command timed out during execution.
+ *         -EIO: I/O error.
+ */
+__syscall int32_t ufshc_variant_pwr_change_notify(const struct device *dev,
+					uint8_t status,
+					struct ufs_pwr_mode_info *desired_pwr_mode,
+					struct ufs_pwr_mode_info *final_pwr_mode);
+
+static inline int32_t z_impl_ufshc_variant_pwr_change_notify(const struct device *dev,
+					uint8_t status,
+					struct ufs_pwr_mode_info *desired_pwr_mode,
+					struct ufs_pwr_mode_info *final_pwr_mode)
+{
+	const struct ufshc_driver_api *api = (const struct ufshc_driver_api *)dev->api;
+
+	if (api->pwr_change_notify == NULL) {
+		return -ENOSYS;
+	}
+
+	return api->pwr_change_notify(dev, status, desired_pwr_mode, final_pwr_mode);
 }
 
 /**
