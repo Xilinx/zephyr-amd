@@ -18,23 +18,26 @@
 #define DISK_NAME CONFIG_MMC_VOLUME_NAME
 #elif defined(CONFIG_NVME)
 #define DISK_NAME "nvme0n0"
+#elif defined(CONFIG_DISK_DRIVER_UFS)
+#define DISK_NAME "UFS"
 #else
 #error "No disk device defined, is your board supported?"
 #endif
 
-/* Assume the largest sector we will encounter is 512 bytes */
-#define SECTOR_SIZE 512
-#if CONFIG_SRAM_SIZE >= 512
+/* Assume the largest sector we will encounter is 4096 bytes */
+#define SECTOR_SIZE 4096
 /* Cap buffer size at 128 KiB */
-#define SEQ_BLOCK_COUNT 256
+#define MAX_BUF_SIZE (128 * 1024)
+#if CONFIG_SRAM_SIZE >= 512
+#define BUF_SIZE (MAX_BUF_SIZE)
 #elif CONFIG_SOC_POSIX
 /* Posix does not define SRAM size */
-#define SEQ_BLOCK_COUNT 256
+#define BUF_SIZE (MAX_BUF_SIZE)
 #else
-/* Two buffers with 512 byte blocks will use half of all SRAM */
-#define SEQ_BLOCK_COUNT (CONFIG_SRAM_SIZE / 2)
+/* Two buffers to use half of all SRAM */
+#define BUF_SIZE (CONFIG_SRAM_SIZE / 4)
 #endif
-#define BUF_SIZE (SECTOR_SIZE * SEQ_BLOCK_COUNT)
+#define SEQ_BLOCK_COUNT (BUF_SIZE / SECTOR_SIZE)
 /* Number of sequential reads to get an average speed */
 #define SEQ_ITERATIONS 10
 /* Number of random reads to get an IOPS calculation */
@@ -76,7 +79,7 @@ static void test_setup(void)
 	disk_sector_size = cmd_buf;
 
 	/* Assume sector size is 512 bytes, it will speed up calculations later */
-	zassert_true(cmd_buf == SECTOR_SIZE,
+	zassert_true(cmd_buf <= SECTOR_SIZE,
 		"Test will fail, SECTOR_SIZE definition must be changed");
 
 	disk_init_done = true;
@@ -235,7 +238,8 @@ ZTEST(disk_performance, test_random_read)
 	/* Stop timing system */
 	timing_stop();
 
-	TC_PRINT("512 Byte IOPS over %d random reads: %"PRIu64" IOPS\n",
+	TC_PRINT("%u Byte IOPS over %d random reads: %"PRIu64" IOPS\n",
+		disk_sector_size,
 		RANDOM_ITERATIONS,
 		((uint64_t)(((uint64_t)RANDOM_ITERATIONS)*
 		((uint64_t)NSEC_PER_SEC)))
@@ -287,7 +291,8 @@ ZTEST(disk_performance, test_random_write)
 	/* Stop timing system */
 	timing_stop();
 
-	TC_PRINT("512 Byte IOPS over %d random writes: %"PRIu64" IOPS\n",
+	TC_PRINT("%u Byte IOPS over %d random writes: %"PRIu64" IOPS\n",
+		disk_sector_size,
 		RANDOM_ITERATIONS,
 		((uint64_t)(((uint64_t)RANDOM_ITERATIONS)*
 		((uint64_t)NSEC_PER_SEC)))
