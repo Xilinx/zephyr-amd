@@ -11,6 +11,7 @@ supported:
   - mbox
   - sdhc
   - watchdog
+  - dma
 testing:
   ignore_tags:
     - net
