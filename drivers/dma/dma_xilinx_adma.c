@@ -5,14 +5,17 @@
  */
 
 #include <errno.h>
-#include <zephyr/init.h>
-#include <zephyr/drivers/dma.h>
 #include <soc.h>
+#include <zephyr/cache.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/dma.h>
+#include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/mem_blocks.h>
 #include <zephyr/sys/util.h>
-#include <zephyr/cache.h>
-#include <zephyr/drivers/clock_control.h>
+#include <zephyr/sys/barrier.h>
 
 #include "dma_xilinx_adma.h"
 
@@ -34,50 +37,200 @@ struct dma_xilinx_adma_config {
 	void (*irq_configure)();
 };
 
+struct dma_xilinx_adma_chan {
+	dma_callback_t dma_callback;
+	void *callback_user_data;
+	uint64_t src_addr;
+	uint64_t dst_addr;
+	uint32_t block;
+	struct dma_xilinx_adma_desc_sw *desc;
+	uint32_t desc_count;
+	uint32_t src_burst_len;
+	uint32_t dst_burst_len;
+};
+
 struct dma_xilinx_adma_data {
 	struct dma_context ctx;
 	struct k_spinlock lock;
-	dma_callback_t dma_callback;
-	void *callback_user_data;
-	uint32_t src_addr;
-	uint32_t dst_addr;
-	uint32_t block;
+	struct dma_xilinx_adma_chan chan;
+	struct sys_mem_blocks *dma_desc_pool;
 	bool device_has_been_reset;
 	struct k_event irq_event;
 };
 
-static inline void adma_write_reg(uint32_t val,
-				  volatile uint32_t *reg)
+struct dma_xilinx_adma_desc_ll {
+	uint64_t addr;
+	uint32_t size;
+	uint32_t ctrl;
+	uint64_t nxtdscraddr;
+	uint64_t rsvd;
+};
+
+struct dma_xilinx_adma_desc_sw {
+	struct dma_xilinx_adma_desc_ll src_desc;
+	struct dma_xilinx_adma_desc_ll dst_desc;
+};
+
+static inline void adma_write_reg(uint32_t val, volatile uint32_t *reg)
 {
-	sys_write32(val, (mem_addr_t)(uintptr_t)reg);
+	barrier_dmem_fence_full();
+	sys_write32(val, (mem_addr_t)reg);
 }
 
 static inline uint32_t adma_read_reg(volatile uint32_t *reg)
 {
-	return sys_read32((mem_addr_t)(uintptr_t)reg);
+	uint32_t val = sys_read32((mem_addr_t)reg);
+
+	barrier_dmem_fence_full();
+	return val;
 }
 
 static void dma_xilinx_adma_isr(const struct device *dev)
 {
 	const struct dma_xilinx_adma_config *cfg = dev->config;
-	struct dma_xilinx_adma_data *data = dev->data;
 	uint32_t status = adma_read_reg(&cfg->reg->chan_isr);
+	uint32_t callback_status = DMA_STATUS_COMPLETE;
+	struct dma_xilinx_adma_data *data = dev->data;
 
 	if (!data->device_has_been_reset) {
-		LOG_ERR("DMA not ready, ignoring the interrupt\r\n");
+		LOG_ERR("DMA not ready, ignoring the interrupt");
 		return;
 	}
 
-	/* Invalidate the data */
-	sys_cache_data_invd_range((void *)data->dst_addr, data->block);
-	if (status & XILINX_ADMA_DONE) {
-		if (data->dma_callback) {
-			data->dma_callback(dev, data->callback_user_data,
-					cfg->channel_id, status);
+	adma_write_reg(status, &cfg->reg->chan_isr);
+	if (status & XILINX_ADMA_INT_ERR) {
+		LOG_ERR("DMA AXI error occurred:0x%x", status);
+		callback_status = -EINTR;
+	}
+
+	if (status & XILINX_ADMA_INT_OVRFL) {
+		LOG_ERR("DMA overflow error occurred: 0x%x", status);
+		callback_status = -EOVERFLOW;
+	}
+
+	if (status & XILINX_ADMA_INT_DONE) {
+		uint32_t ctrl0 = adma_read_reg(&cfg->reg->chan_cntrl0);
+
+		if (ctrl0 & XILINX_ADMA_POINT_TYPE_SG) {
+			/* SG mode - invalidate all destination buffers */
+			if (data->chan.desc && data->chan.desc_count > 0) {
+				for (int i = 0; i < data->chan.desc_count; i++) {
+					struct dma_xilinx_adma_desc_ll *dst_desc =
+						&data->chan.desc[i].dst_desc;
+
+					if (dst_desc->addr && dst_desc->size > 0) {
+						sys_cache_data_invd_range((void *)
+									(uintptr_t)dst_desc->addr,
+										dst_desc->size);
+					} else {
+						LOG_ERR("Invalid desc %d: addr=0x%llx size=%d",
+							i, dst_desc->addr, dst_desc->size);
+					}
+				}
+
+				barrier_dmem_fence_full();
+			} else {
+				LOG_ERR("SG mode but no descriptors found! desc=%p count=%d",
+					data->chan.desc, data->chan.desc_count);
+			}
+		} else {
+			/* Simple mode */
+			sys_cache_data_invd_range((void *)(uintptr_t)data->chan.dst_addr,
+						  data->chan.block);
+		}
+
+		if (data->chan.dma_callback) {
+			data->chan.dma_callback(dev, data->chan.callback_user_data,
+					cfg->channel_id, callback_status);
 		}
 		k_event_post(&data->irq_event, XILINX_ADMA_INT_DONE);
 	}
+
 	adma_write_reg(XILINX_ADMA_IDS_DEFAULT_MASK, &cfg->reg->chan_ids);
+}
+
+static int dma_xilinx_adma_setup_sg_descriptors(const struct device *dev,
+						struct dma_config *dma_cfg)
+{
+	const struct dma_xilinx_adma_config *cfg = dev->config;
+	struct dma_block_config *block = dma_cfg->head_block;
+	struct dma_xilinx_adma_data *data = dev->data;
+	struct dma_block_config *temp_block = block;
+	struct dma_xilinx_adma_desc_sw *desc;
+	int ret, desc_count = 0;
+
+	while (temp_block) {
+		desc_count++;
+		if (desc_count > XILINX_ADMA_NUM_DESCS) {
+			LOG_ERR("Too many descriptors: %d (max: %d)",
+				desc_count, XILINX_ADMA_NUM_DESCS);
+			return -EINVAL;
+		}
+		temp_block = temp_block->next_block;
+	}
+
+	ret = sys_mem_blocks_alloc_contiguous(data->dma_desc_pool, desc_count,
+					      (void **)&desc);
+	if (ret < 0) {
+		LOG_ERR("Failed to allocate SG descriptors");
+		return ret;
+	}
+
+	for (int i = 0; i < desc_count; i++) {
+		struct dma_xilinx_adma_desc_ll *src_desc = &desc[i].src_desc;
+		struct dma_xilinx_adma_desc_ll *dst_desc = &desc[i].dst_desc;
+
+		src_desc->addr = block->source_address;
+		src_desc->size = block->block_size & XILINX_ADMA_WORD2_SIZE_MASK;
+		src_desc->ctrl = XILINX_ADMA_DESC_CTRL_SIZE_256;
+		if (cfg->cachecoherent) {
+			src_desc->ctrl |= XILINX_ADMA_DESC_CTRL_COHRNT;
+		}
+
+		dst_desc->addr = block->dest_address;
+		dst_desc->size = block->block_size & XILINX_ADMA_WORD2_SIZE_MASK;
+		dst_desc->ctrl = XILINX_ADMA_DESC_CTRL_SIZE_256;
+
+		if (cfg->cachecoherent) {
+			dst_desc->ctrl |= XILINX_ADMA_DESC_CTRL_COHRNT;
+		}
+
+		if (i == desc_count - 1) {
+			src_desc->ctrl |= XILINX_ADMA_DESC_CTRL_STOP;
+			dst_desc->ctrl |= XILINX_ADMA_DESC_CTRL_COMP_INT |
+					  XILINX_ADMA_DESC_CTRL_STOP;
+			src_desc->nxtdscraddr = 0;
+			dst_desc->nxtdscraddr = 0;
+		} else {
+			uint64_t next_src_addr = (uintptr_t)&desc[i + 1].src_desc;
+			uint64_t next_dst_addr = (uintptr_t)&desc[i + 1].dst_desc;
+
+			src_desc->nxtdscraddr = next_src_addr;
+			dst_desc->nxtdscraddr = next_dst_addr;
+		}
+
+		sys_cache_data_flush_range((void *)(uintptr_t)block->source_address,
+					   block->block_size);
+		block = block->next_block;
+	}
+
+	sys_cache_data_flush_range(desc, desc_count * sizeof(struct dma_xilinx_adma_desc_sw));
+	data->chan.desc = desc;
+	data->chan.desc_count = desc_count;
+	return desc_count;
+}
+
+static void __maybe_unused dma_xilinx_adma_free_sg_descriptors(const struct device *dev)
+{
+	struct dma_xilinx_adma_data *data = dev->data;
+
+	if (data->chan.desc) {
+		sys_mem_blocks_free_contiguous(data->dma_desc_pool,
+					       data->chan.desc,
+					       data->chan.desc_count);
+		data->chan.desc = NULL;
+		data->chan.desc_count = 0;
+	}
 }
 
 /* Configure DMA channel */
@@ -87,24 +240,28 @@ static int dma_xilinx_adma_configure(const struct device *dev,
 	const struct dma_xilinx_adma_config *cfg = dev->config;
 	struct dma_xilinx_adma_data *data = dev->data;
 	struct dma_block_config *current_block = dma_cfg->head_block;
-
-	k_spinlock_key_t key = k_spin_lock(&data->lock);
+	uint32_t val;
 
 	if (!dma_cfg->head_block) {
 		return -EINVAL;
 	}
 
-	data->src_addr = current_block->source_address;
-	data->dst_addr = current_block->dest_address;
-	data->block = current_block->block_size;
+	if (dma_cfg->dest_data_size != dma_cfg->source_data_size) {
+		LOG_ERR("Source and dest data size differ.");
+		return -EINVAL;
+	}
+
+	k_spinlock_key_t key = k_spin_lock(&data->lock);
+
+	data->chan.src_burst_len = XILINX_ADMA_MAX_DST_BURST_LEN;
+	data->chan.dst_burst_len = XILINX_ADMA_MAX_SRC_BURST_LEN;
 
 	if (!data->device_has_been_reset) {
 		LOG_INF("Soft-resetting the DMA core!");
-		uint32_t val;
 
-		/* Disables all interrupts */
 		adma_write_reg(XILINX_ADMA_IDS_DEFAULT_MASK, &cfg->reg->chan_ids);
-		adma_write_reg(XILINX_ADMA_IDS_DEFAULT_MASK, &cfg->reg->chan_isr);
+		val = adma_read_reg(&cfg->reg->chan_isr);
+		adma_write_reg(val, &cfg->reg->chan_isr);
 
 		/* Configurations reset */
 		adma_write_reg(XILINX_ADMA_RESET_VAL, &cfg->reg->chan_cntrl0);
@@ -129,17 +286,43 @@ static int dma_xilinx_adma_configure(const struct device *dev,
 		}
 		adma_write_reg(val, &cfg->reg->chan_data_attr);
 
-		/* Clearing the interrupt account rgisters */
 		val = adma_read_reg(&cfg->reg->chan_irq_src_acct);
 		val = adma_read_reg(&cfg->reg->chan_irq_dst_acct);
 
 		data->device_has_been_reset = true;
 	}
 
-	adma_write_reg(XILINX_ADMA_AXI_RD_DST_DSCR, &cfg->reg->chan_cntrl0);
-	/* store callback and user data */
-	data->dma_callback = dma_cfg->dma_callback;
-	data->callback_user_data = dma_cfg->user_data;
+	if (dma_cfg->head_block->next_block) {
+		/* Configure for scatter gather mode */
+		int desc_count = dma_xilinx_adma_setup_sg_descriptors(dev, dma_cfg);
+
+		if (desc_count < 0) {
+			k_spin_unlock(&data->lock, key);
+			return desc_count;
+		}
+
+		val = adma_read_reg(&cfg->reg->chan_cntrl0);
+		val |= XILINX_ADMA_POINT_TYPE_SG;
+		adma_write_reg(val, &cfg->reg->chan_cntrl0);
+
+		LOG_INF("Configured SG mode with %d descriptors", desc_count);
+	} else {
+		/* Simple mode - single block transfer */
+		data->chan.src_addr = current_block->source_address;
+		data->chan.dst_addr = current_block->dest_address;
+		data->chan.block = current_block->block_size;
+
+		val = adma_read_reg(&cfg->reg->chan_cntrl0);
+		val &= ~XILINX_ADMA_POINT_TYPE_SG;
+		adma_write_reg(val, &cfg->reg->chan_cntrl0);
+	}
+
+	val = adma_read_reg(&cfg->reg->chan_cntrl0);
+	val |= XILINX_ADMA_OVR_FETCH;
+	adma_write_reg(val, &cfg->reg->chan_cntrl0);
+
+	data->chan.dma_callback = dma_cfg->dma_callback;
+	data->chan.callback_user_data = dma_cfg->user_data;
 
 	k_spin_unlock(&data->lock, key);
 	return 0;
@@ -151,48 +334,79 @@ static int dma_xilinx_adma_start(const struct device *dev, uint32_t channel)
 	struct dma_xilinx_adma_data *data = dev->data;
 	k_timeout_t timeout;
 	uint64_t addr;
+	uint32_t ctrl_val;
 
 	k_spinlock_key_t key = k_spin_lock(&data->lock);
+	/* Check if scatter-gather mode is enabled */
+	ctrl_val = adma_read_reg(&cfg->reg->chan_cntrl0);
+	if (ctrl_val & XILINX_ADMA_POINT_TYPE_SG) {
+		if (!data->chan.desc) {
+			LOG_ERR("No SG descriptors configured");
+			k_spin_unlock(&data->lock, key);
+			return -EINVAL;
+		}
 
-	adma_write_reg(((data->src_addr) & XILINX_ADMA_WORD0_LSB_MASK),
-		       &cfg->reg->chan_srcdscr_wrd0);
-	addr = data->src_addr;
-	adma_write_reg(((addr >> XILINX_ADMA_WORD1_MSB_SHIFT)
-				  & XILINX_ADMA_WORD1_MSB_MASK), &cfg->reg->chan_srcdscr_wrd1);
+		uint64_t src_desc_addr = (uintptr_t)&data->chan.desc[0].src_desc;
 
-	adma_write_reg(((data->block) & XILINX_ADMA_WORD2_SIZE_MASK),
-		       &cfg->reg->chan_srcdscr_wrd2);
+		adma_write_reg((src_desc_addr & XILINX_ADMA_WORD0_LSB_MASK),
+			       &cfg->reg->chan_srcdesc);
+		adma_write_reg((src_desc_addr >> XILINX_ADMA_WORD1_MSB_SHIFT),
+			       &cfg->reg->chan_srcdesc_msb);
 
-	adma_write_reg(((data->dst_addr) & XILINX_ADMA_WORD0_LSB_MASK),
-		       &cfg->reg->chan_dstdscr_wrd0);
-	addr = data->dst_addr;
-	adma_write_reg(((addr >> XILINX_ADMA_WORD1_MSB_SHIFT)
-				  & XILINX_ADMA_WORD1_MSB_MASK), &cfg->reg->chan_dstdscr_wrd1);
+		uint64_t dst_desc_addr = (uintptr_t)&data->chan.desc[0].dst_desc;
 
-	adma_write_reg(((data->block) & XILINX_ADMA_WORD2_SIZE_MASK),
-		       &cfg->reg->chan_dstdscr_wrd2);
+		adma_write_reg((dst_desc_addr & XILINX_ADMA_WORD0_LSB_MASK),
+			       &cfg->reg->chan_dstdesc);
+		adma_write_reg((dst_desc_addr >> XILINX_ADMA_WORD1_MSB_SHIFT),
+			       &cfg->reg->chan_dstdesc_msb);
+	} else {
 
-	adma_write_reg(XILINX_ADMA_DESC_CTRL_COHRNT, &cfg->reg->chan_srcdscr_wrd3);
-	adma_write_reg(XILINX_ADMA_DESC_CTRL_COHRNT, &cfg->reg->chan_dstdscr_wrd3);
+		adma_write_reg(((data->chan.src_addr) & XILINX_ADMA_WORD0_LSB_MASK),
+			       &cfg->reg->chan_srcdscr_wrd0);
+		addr = (uint64_t)data->chan.src_addr;
+		adma_write_reg(((addr >> XILINX_ADMA_WORD1_MSB_SHIFT)
+			       & XILINX_ADMA_WORD1_MSB_MASK), &cfg->reg->chan_srcdscr_wrd1);
 
-	/* Flush the source buffer */
-	sys_cache_data_flush_range((void *)data->src_addr, data->block);
-	/* Enable Interrupts	*/
+		adma_write_reg(((data->chan.block) & XILINX_ADMA_WORD2_SIZE_MASK),
+			       &cfg->reg->chan_srcdscr_wrd2);
+
+		adma_write_reg(((data->chan.dst_addr) & XILINX_ADMA_WORD0_LSB_MASK),
+			       &cfg->reg->chan_dstdscr_wrd0);
+		addr = (uint64_t)data->chan.dst_addr;
+		adma_write_reg(((addr >> XILINX_ADMA_WORD1_MSB_SHIFT)
+			       & XILINX_ADMA_WORD1_MSB_MASK), &cfg->reg->chan_dstdscr_wrd1);
+
+		adma_write_reg(((data->chan.block) & XILINX_ADMA_WORD2_SIZE_MASK),
+			       &cfg->reg->chan_dstdscr_wrd2);
+
+		ctrl_val = XILINX_ADMA_DESC_CTRL_SIZE_256;
+		if (cfg->cachecoherent) {
+			ctrl_val |= XILINX_ADMA_DESC_CTRL_COHRNT;
+		}
+
+		adma_write_reg(ctrl_val, &cfg->reg->chan_srcdscr_wrd3);
+		adma_write_reg(ctrl_val, &cfg->reg->chan_dstdscr_wrd3);
+
+		sys_cache_data_flush_range((void *)(uintptr_t)data->chan.src_addr,
+					   data->chan.block);
+	}
+
 	adma_write_reg(XILINX_ADMA_INT_EN_DEFAULT_MASK, &cfg->reg->chan_ien);
 	/* Start DMA */
 	adma_write_reg(XILINX_ADMA_START, &cfg->reg->chan_cntrl2);
 
 	k_spin_unlock(&data->lock, key);
+
 	timeout = K_MSEC(POLL_TIMEOUT_COUNTER);
 	if (!(k_event_wait(&data->irq_event, XILINX_ADMA_INT_DONE, false, timeout))) {
 		LOG_ERR("Transfer Failed, Timeout error");
+		dma_xilinx_adma_free_sg_descriptors(dev);
 		return -EINVAL;
 	}
 
 	return 0;
 }
 
-/* DMA API callbacks */
 static const struct dma_driver_api dma_xilinx_adma_driver_api = {
 	.config = dma_xilinx_adma_configure,
 	.start = dma_xilinx_adma_start,
@@ -217,32 +431,38 @@ static int dma_xilinx_adma_init(const struct device *dev)
 	}
 
 	k_event_init(&data->irq_event);
-	/* Configure IRQs */
 	cfg->irq_configure();
 	return 0;
 }
 
-#define XILINX_ADMA_INIT(n)									\
-	static void dma_xilinx_adma##n##_irq_configure(void)					\
-	{											\
-		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority),				\
-			dma_xilinx_adma_isr, DEVICE_DT_INST_GET(n), DT_INST_IRQ(n, flags));	\
-		irq_enable(DT_INST_IRQN(n));							\
-	}											\
-	static const struct dma_xilinx_adma_config dma_xilinx_adma##n##_config = {		\
-		.reg = (void *)(uintptr_t)DT_INST_REG_ADDR(n),					\
-		.cachecoherent = DT_INST_PROP_OR(n, cache_coherent, 0),				\
-		.main_clock = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR_BY_IDX(n, 0)),			\
-		.apb_clock = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR_BY_IDX(n, 1)),			\
-		.channel_id = n, /*Assign channel ID based on instance number*/			\
-		.irq_configure = dma_xilinx_adma##n##_irq_configure,				\
-	};											\
-	static struct dma_xilinx_adma_data dma_xilinx_adma##n##_data = {			\
-		.ctx = {.magic = DMA_MAGIC, .atomic = NULL},					\
-	};											\
-	DEVICE_DT_INST_DEFINE(n, &dma_xilinx_adma_init, NULL,					\
-			&dma_xilinx_adma##n##_data,						\
-			&dma_xilinx_adma##n##_config, POST_KERNEL,				\
-			CONFIG_DMA_INIT_PRIORITY, &dma_xilinx_adma_driver_api);
+#define XILINX_ADMA_INIT(n)                                                    \
+	SYS_MEM_BLOCKS_DEFINE_STATIC(desc_pool_##n,                             \
+					sizeof(struct dma_xilinx_adma_desc_sw),   \
+					CONFIG_DMA_XILINX_ADMA_SG_BUFFER_COUNT,   \
+					CONFIG_DMA_XILINX_ADMA_DESC_POOL_ALIGNMENT);              \
+	static void dma_xilinx_adma##n##_irq_configure(void)                    \
+	{                                                                       \
+		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority),          \
+			    dma_xilinx_adma_isr, DEVICE_DT_INST_GET(n), \
+			    DT_INST_IRQ(n, flags));                             \
+		irq_enable(DT_INST_IRQN(n));                                    \
+	}                                                                       \
+	static const struct dma_xilinx_adma_config dma_xilinx_adma##n##_config = { \
+		.reg = (void *)(uintptr_t)DT_INST_REG_ADDR(n),                  \
+		.cachecoherent = DT_INST_PROP_OR(n, cache_coherent, 0),         \
+		.main_clock = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR_BY_IDX(n, 0)),  \
+		.apb_clock = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR_BY_IDX(n, 1)),   \
+		.channel_id = n, /* Assign channel ID based on instance */      \
+		.irq_configure = dma_xilinx_adma##n##_irq_configure,            \
+	};                                                                      \
+	static struct dma_xilinx_adma_data dma_xilinx_adma##n##_data = {        \
+		.ctx = {.magic = DMA_MAGIC, .atomic = NULL},                    \
+		.dma_desc_pool = &desc_pool_##n,                                \
+	};                                                                      \
+	DEVICE_DT_INST_DEFINE(n, &dma_xilinx_adma_init, NULL,                   \
+			      &dma_xilinx_adma##n##_data,                       \
+			      &dma_xilinx_adma##n##_config, POST_KERNEL,        \
+			      CONFIG_DMA_INIT_PRIORITY,                         \
+			      &dma_xilinx_adma_driver_api);
 
 DT_INST_FOREACH_STATUS_OKAY(XILINX_ADMA_INIT)
