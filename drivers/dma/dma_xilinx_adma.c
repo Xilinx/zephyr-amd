@@ -234,7 +234,46 @@ static void __maybe_unused dma_xilinx_adma_free_sg_descriptors(const struct devi
 	}
 }
 
-/* Configure DMA channel */
+static bool dma_xilinx_adma_chan_filter(const struct device *dev,
+					int channel_id, void *filter_param)
+{
+	const struct dma_xilinx_adma_config *cfg = dev->config;
+
+	return (channel_id == cfg->channel_id);
+}
+
+static int dma_xilinx_adma_stop(const struct device *dev, uint32_t channel)
+{
+	const struct dma_xilinx_adma_config *cfg = dev->config;
+	struct dma_xilinx_adma_data *data = dev->data;
+	k_spinlock_key_t key = k_spin_lock(&data->lock);
+
+	adma_write_reg(XILINX_ADMA_IDS_DEFAULT_MASK, &cfg->reg->chan_ids);
+
+	k_event_clear(&data->irq_event, XILINX_ADMA_INT_DONE);
+
+	k_spin_unlock(&data->lock, key);
+	return 0;
+}
+
+static int dma_xilinx_adma_get_status(const struct device *dev, uint32_t channel,
+				      struct dma_status *stat)
+{
+	const struct dma_xilinx_adma_config *cfg = dev->config;
+	uint32_t status;
+
+	if (!stat) {
+		return -EINVAL;
+	}
+
+	status = adma_read_reg(&cfg->reg->chan_sts);
+
+	stat->busy = !!(status & XILINX_ADMA_START);
+	stat->dir = MEMORY_TO_MEMORY;
+
+	return 0;
+}
+
 static int dma_xilinx_adma_configure(const struct device *dev,
 				     uint32_t channel, struct dma_config *dma_cfg)
 {
@@ -417,6 +456,9 @@ static int dma_xilinx_adma_start(const struct device *dev, uint32_t channel)
 static const struct dma_driver_api dma_xilinx_adma_driver_api = {
 	.config = dma_xilinx_adma_configure,
 	.start = dma_xilinx_adma_start,
+	.stop = dma_xilinx_adma_stop,
+	.get_status = dma_xilinx_adma_get_status,
+	.chan_filter = dma_xilinx_adma_chan_filter,
 };
 
 static int dma_xilinx_adma_init(const struct device *dev)
