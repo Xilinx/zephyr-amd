@@ -46,13 +46,13 @@ struct dma_xilinx_adma_data {
 	struct k_event irq_event;
 };
 
-static inline void dma_xilinx_adma_write_reg(uint32_t val,
-					     volatile uint32_t *reg)
+static inline void adma_write_reg(uint32_t val,
+				  volatile uint32_t *reg)
 {
 	sys_write32(val, (mem_addr_t)(uintptr_t)reg);
 }
 
-static inline uint32_t dma_xilinx_adma_read_reg(volatile uint32_t *reg)
+static inline uint32_t adma_read_reg(volatile uint32_t *reg)
 {
 	return sys_read32((mem_addr_t)(uintptr_t)reg);
 }
@@ -61,7 +61,7 @@ static void dma_xilinx_adma_isr(const struct device *dev)
 {
 	const struct dma_xilinx_adma_config *cfg = dev->config;
 	struct dma_xilinx_adma_data *data = dev->data;
-	uint32_t status = dma_xilinx_adma_read_reg(&cfg->reg->chan_isr);
+	uint32_t status = adma_read_reg(&cfg->reg->chan_isr);
 
 	if (!data->device_has_been_reset) {
 		LOG_ERR("DMA not ready, ignoring the interrupt\r\n");
@@ -77,7 +77,7 @@ static void dma_xilinx_adma_isr(const struct device *dev)
 		}
 		k_event_post(&data->irq_event, XILINX_ADMA_INT_DONE);
 	}
-	dma_xilinx_adma_write_reg(XILINX_ADMA_IDS_DEFAULT_MASK, &cfg->reg->chan_ids);
+	adma_write_reg(XILINX_ADMA_IDS_DEFAULT_MASK, &cfg->reg->chan_ids);
 }
 
 /* Configure DMA channel */
@@ -103,40 +103,40 @@ static int dma_xilinx_adma_configure(const struct device *dev,
 		uint32_t val;
 
 		/* Disables all interrupts */
-		dma_xilinx_adma_write_reg(XILINX_ADMA_IDS_DEFAULT_MASK, &cfg->reg->chan_ids);
-		dma_xilinx_adma_write_reg(XILINX_ADMA_IDS_DEFAULT_MASK, &cfg->reg->chan_isr);
+		adma_write_reg(XILINX_ADMA_IDS_DEFAULT_MASK, &cfg->reg->chan_ids);
+		adma_write_reg(XILINX_ADMA_IDS_DEFAULT_MASK, &cfg->reg->chan_isr);
 
 		/* Configurations reset */
-		dma_xilinx_adma_write_reg(XILINX_ADMA_RESET_VAL, &cfg->reg->chan_cntrl0);
-		dma_xilinx_adma_write_reg(XILINX_ADMA_RESET_VAL1, &cfg->reg->chan_cntrl1);
-		dma_xilinx_adma_write_reg(XILINX_ADMA_RESET_VAL2, &cfg->reg->chan_cntrl2);
-		dma_xilinx_adma_write_reg(XILINX_ADMA_DATA_ATTR_RST_VAL,
-					  &cfg->reg->chan_data_attr);
+		adma_write_reg(XILINX_ADMA_RESET_VAL, &cfg->reg->chan_cntrl0);
+		adma_write_reg(XILINX_ADMA_RESET_VAL1, &cfg->reg->chan_cntrl1);
+		adma_write_reg(XILINX_ADMA_RESET_VAL2, &cfg->reg->chan_cntrl2);
+		adma_write_reg(XILINX_ADMA_DATA_ATTR_RST_VAL,
+			       &cfg->reg->chan_data_attr);
 
 		if (cfg->cachecoherent) {
 			val = XILINX_ADMA_AXCOHRNT;
 			val = (val & ~XILINX_ADMA_AXCACHE) |
 				(XILINX_ADMA_AXCACHE_VAL << XILINX_ADMA_AXCACHE_OFST);
-			dma_xilinx_adma_write_reg(val, &cfg->reg->chan_dscr_attr);
+			adma_write_reg(val, &cfg->reg->chan_dscr_attr);
 		}
 
-		val = dma_xilinx_adma_read_reg(&cfg->reg->chan_data_attr);
+		val = adma_read_reg(&cfg->reg->chan_data_attr);
 		if (cfg->cachecoherent) {
 			val = (val & ~XILINX_ADMA_ARCACHE) |
 				(XILINX_ADMA_AXCACHE_VAL << XILINX_ADMA_ARCACHE_OFST);
 			val = (val & ~XILINX_ADMA_AWCACHE) |
 				(XILINX_ADMA_AXCACHE_VAL << XILINX_ADMA_AWCACHE_OFST);
 		}
-		dma_xilinx_adma_write_reg(val, &cfg->reg->chan_data_attr);
+		adma_write_reg(val, &cfg->reg->chan_data_attr);
 
 		/* Clearing the interrupt account rgisters */
-		val = dma_xilinx_adma_read_reg(&cfg->reg->chan_irq_src_acct);
-		val = dma_xilinx_adma_read_reg(&cfg->reg->chan_irq_dst_acct);
+		val = adma_read_reg(&cfg->reg->chan_irq_src_acct);
+		val = adma_read_reg(&cfg->reg->chan_irq_dst_acct);
 
 		data->device_has_been_reset = true;
 	}
 
-	dma_xilinx_adma_write_reg(XILINX_ADMA_AXI_RD_DST_DSCR, &cfg->reg->chan_cntrl0);
+	adma_write_reg(XILINX_ADMA_AXI_RD_DST_DSCR, &cfg->reg->chan_cntrl0);
 	/* store callback and user data */
 	data->dma_callback = dma_cfg->dma_callback;
 	data->callback_user_data = dma_cfg->user_data;
@@ -154,33 +154,33 @@ static int dma_xilinx_adma_start(const struct device *dev, uint32_t channel)
 
 	k_spinlock_key_t key = k_spin_lock(&data->lock);
 
-	dma_xilinx_adma_write_reg(((data->src_addr) & XILINX_ADMA_WORD0_LSB_MASK),
-				  &cfg->reg->chan_srcdscr_wrd0);
+	adma_write_reg(((data->src_addr) & XILINX_ADMA_WORD0_LSB_MASK),
+		       &cfg->reg->chan_srcdscr_wrd0);
 	addr = data->src_addr;
-	dma_xilinx_adma_write_reg(((addr >> XILINX_ADMA_WORD1_MSB_SHIFT)
+	adma_write_reg(((addr >> XILINX_ADMA_WORD1_MSB_SHIFT)
 				  & XILINX_ADMA_WORD1_MSB_MASK), &cfg->reg->chan_srcdscr_wrd1);
 
-	dma_xilinx_adma_write_reg(((data->block) & XILINX_ADMA_WORD2_SIZE_MASK),
-				  &cfg->reg->chan_srcdscr_wrd2);
+	adma_write_reg(((data->block) & XILINX_ADMA_WORD2_SIZE_MASK),
+		       &cfg->reg->chan_srcdscr_wrd2);
 
-	dma_xilinx_adma_write_reg(((data->dst_addr) & XILINX_ADMA_WORD0_LSB_MASK),
-				  &cfg->reg->chan_dstdscr_wrd0);
+	adma_write_reg(((data->dst_addr) & XILINX_ADMA_WORD0_LSB_MASK),
+		       &cfg->reg->chan_dstdscr_wrd0);
 	addr = data->dst_addr;
-	dma_xilinx_adma_write_reg(((addr >> XILINX_ADMA_WORD1_MSB_SHIFT)
+	adma_write_reg(((addr >> XILINX_ADMA_WORD1_MSB_SHIFT)
 				  & XILINX_ADMA_WORD1_MSB_MASK), &cfg->reg->chan_dstdscr_wrd1);
 
-	dma_xilinx_adma_write_reg(((data->block) & XILINX_ADMA_WORD2_SIZE_MASK),
-				  &cfg->reg->chan_dstdscr_wrd2);
+	adma_write_reg(((data->block) & XILINX_ADMA_WORD2_SIZE_MASK),
+		       &cfg->reg->chan_dstdscr_wrd2);
 
-	dma_xilinx_adma_write_reg(XILINX_ADMA_DESC_CTRL_COHRNT, &cfg->reg->chan_srcdscr_wrd3);
-	dma_xilinx_adma_write_reg(XILINX_ADMA_DESC_CTRL_COHRNT, &cfg->reg->chan_dstdscr_wrd3);
+	adma_write_reg(XILINX_ADMA_DESC_CTRL_COHRNT, &cfg->reg->chan_srcdscr_wrd3);
+	adma_write_reg(XILINX_ADMA_DESC_CTRL_COHRNT, &cfg->reg->chan_dstdscr_wrd3);
 
 	/* Flush the source buffer */
 	sys_cache_data_flush_range((void *)data->src_addr, data->block);
 	/* Enable Interrupts	*/
-	dma_xilinx_adma_write_reg(XILINX_ADMA_INT_EN_DEFAULT_MASK, &cfg->reg->chan_ien);
+	adma_write_reg(XILINX_ADMA_INT_EN_DEFAULT_MASK, &cfg->reg->chan_ien);
 	/* Start DMA */
-	dma_xilinx_adma_write_reg(XILINX_ADMA_START, &cfg->reg->chan_cntrl2);
+	adma_write_reg(XILINX_ADMA_START, &cfg->reg->chan_cntrl2);
 
 	k_spin_unlock(&data->lock, key);
 	timeout = K_MSEC(POLL_TIMEOUT_COUNTER);
