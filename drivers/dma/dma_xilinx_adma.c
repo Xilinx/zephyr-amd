@@ -35,6 +35,7 @@ struct dma_xilinx_adma_config {
 	const struct device *apb_clock;
 	uint8_t channel_id;
 	void (*irq_configure)();
+	uint8_t bus_width;
 };
 
 struct dma_xilinx_adma_chan {
@@ -251,6 +252,12 @@ static int dma_xilinx_adma_configure(const struct device *dev,
 		return -EINVAL;
 	}
 
+	if (cfg->bus_width != XILINX_ADMA_BUS_WIDTH_64 &&
+	    cfg->bus_width != XILINX_ADMA_BUS_WIDTH_128) {
+		LOG_ERR("Invalid bus-width value: %u", cfg->bus_width);
+		return -EINVAL;
+	}
+
 	k_spinlock_key_t key = k_spin_lock(&data->lock);
 
 	data->chan.src_burst_len = XILINX_ADMA_MAX_DST_BURST_LEN;
@@ -454,6 +461,8 @@ static int dma_xilinx_adma_init(const struct device *dev)
 		.apb_clock = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR_BY_IDX(n, 1)),   \
 		.channel_id = n, /* Assign channel ID based on instance */      \
 		.irq_configure = dma_xilinx_adma##n##_irq_configure,            \
+		.bus_width = DT_INST_PROP_OR(n, xlnx_bus_width,                 \
+					     XILINX_ADMA_BUS_WIDTH_64),         \
 	};                                                                      \
 	static struct dma_xilinx_adma_data dma_xilinx_adma##n##_data = {        \
 		.ctx = {.magic = DMA_MAGIC, .atomic = NULL},                    \
