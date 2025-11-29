@@ -202,6 +202,14 @@
 		.mair_idx = MPU_MAIR_INDEX_SRAM_NOCACHE,              /* Cache-ability */          \
 		.r_limit = limit - 1,                                 /* Region Limit */           \
 	}
+#define REGION_SHARED_MEM_ATTR(limit)					    \
+	{								    \
+		.rbar =	P_RW_U_RW_Msk |					    \
+			OUTER_SHAREABLE_Msk , /* AP, XN, SH */		    \
+		/* Cache-ability */					    \
+		.mair_idx = MPU_MAIR_INDEX_SRAM_NOCACHE,		    \
+		.r_limit = limit - 1,  /* Region Limit */		    \
+	}
 #if defined(CONFIG_MPU_ALLOW_FLASH_WRITE)
 /* Note that the access permissions allow for un-privileged writes, contrary
  * to ARMv7-M where un-privileged code has Read-Only permissions.
@@ -269,6 +277,13 @@
 		.mair_idx = MPU_MAIR_INDEX_SRAM_NOCACHE,              /* Cache-ability */          \
 		.r_limit = REGION_LIMIT_ADDR(base, size),             /* Region Limit */           \
 		IF_ENABLED(CONFIG_ARM_MPU_PXN, (.pxn = PRIV_EXEC_NEVER,))			   \
+	}
+#define REGION_SHARED_MEM_ATTR(base, size) \
+	{\
+		.rbar = P_RW_U_RW_Msk | OUTER_SHAREABLE_Msk, /* AP, XN, SH */ \
+		/* Cache-ability */ \
+		.mair_idx = MPU_MAIR_INDEX_SRAM_NOCACHE, \
+		.r_limit = REGION_LIMIT_ADDR(base, size),  /* Region Limit */ \
 	}
 
 #if defined(CONFIG_MPU_ALLOW_FLASH_WRITE)
