@@ -52,7 +52,7 @@ static const struct arm_mpu_region mpu_regions[] = {
 #if DT_HAS_CHOSEN(zephyr_ipc_shm)
 	MPU_REGION_ENTRY("SHARED_MEM",
 			 (uintptr_t)SHARED_MEM_START,
-			 REGION_RAM_ATTR(SHARED_MEM_END)),
+			 REGION_SHARED_MEM_ATTR(SHARED_MEM_END)),
 #endif /* DT_HAS_CHOSEN(zephyr_ipc_shm) */
 
 	MPU_REGION_ENTRY("DEVICE_LPD_PL",
