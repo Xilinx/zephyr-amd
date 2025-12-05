@@ -29,3 +29,5 @@ tests:
       - xg27_dk2602a
     extra_configs:
       - CONFIG_PM=y
+  drivers.watchdog.wdt_error_cases.xilinx_wwdt:
+    filter: dt_compat_enabled("xlnx,versal-wwdt")
