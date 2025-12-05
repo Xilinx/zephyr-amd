@@ -9,7 +9,8 @@ tests:
       not (CONFIG_WDT_SAM or dt_compat_enabled("st,stm32-window-watchdog")
        or dt_compat_enabled("st,stm32-watchdog") or CONFIG_SOC_FAMILY_LPC or
        CONFIG_SOC_SERIES_IMXRT6XX or CONFIG_SOC_SERIES_IMXRT5XX or
-       CONFIG_SOC_FAMILY_GD_GD32 or SOC_SERIES_GD32VF103)
+       CONFIG_SOC_FAMILY_GD_GD32 or SOC_SERIES_GD32VF103 or
+       dt_compat_enabled("xlnx,versal-wwdt"))
     platform_exclude:
       - mec15xxevb_assy6853
       - s32z2xxdc2/s32z270/rtu0
@@ -126,3 +127,6 @@ tests:
     filter: dt_compat_enabled("ti,tps382x")
     platform_allow: mimxrt1050_evk
     extra_args: DTC_OVERLAY_FILE="boards/mimxrt1050_evk_ti_tps382x.overlay"
+  drivers.watchdog.xilinx_wwdt:
+    filter: dt_compat_enabled("xlnx,versal-wwdt")
+    build_only: true
