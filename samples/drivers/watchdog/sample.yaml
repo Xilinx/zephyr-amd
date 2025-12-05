@@ -16,7 +16,8 @@ common:
   depends_on: watchdog
 tests:
   sample.drivers.watchdog:
-    filter: not (CONFIG_SOC_FAMILY_STM32 or CONFIG_SOC_FAMILY_GD_GD32 or SOC_SERIES_GD32VF103)
+    filter: not (CONFIG_SOC_FAMILY_STM32 or CONFIG_SOC_FAMILY_GD_GD32 or SOC_SERIES_GD32VF103
+                 or dt_compat_enabled("xlnx,versal-wwdt"))
     platform_exclude:
       - s32z2xxdc2/s32z270/rtu0
       - s32z2xxdc2/s32z270/rtu1
@@ -147,3 +148,6 @@ tests:
     extra_args: DTC_OVERLAY_FILE=boards/versalnet_rpu.overlay
     platform_allow:
       - versalnet_rpu
+  sample.drivers.watchdog.xilinx_wwdt:
+    build_only: true
+    filter: dt_compat_enabled("xlnx,versal-wwdt")
