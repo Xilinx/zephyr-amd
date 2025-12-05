@@ -26,6 +26,7 @@
 		dma5 = &adma5;
 		dma6 = &adma6;
 		dma7 = &adma7;
+		watchdog0 = &lpd_wwdt0;
 	};
 
 	ufs_core_clk: ufs-core-clk {
