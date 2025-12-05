@@ -107,10 +107,6 @@
 #define WDT_NODE DT_INST(0, andestech_atcwdt200)
 #define TIMEOUTS 0
 #define WDT_TEST_MAX_WINDOW 200U
-#elif DT_HAS_COMPAT_STATUS_OKAY(xlnx_versal_wwdt)
-#define WDT_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(xlnx_versal_wwdt)
-#define WDT_TEST_MAX_WINDOW 20000U
-#define TIMEOUTS 0
 #endif
 #if DT_HAS_COMPAT_STATUS_OKAY(raspberrypi_pico_watchdog)
 #define WDT_TEST_MAX_WINDOW 8000U
@@ -122,6 +118,10 @@
 #endif
 #if DT_HAS_COMPAT_STATUS_OKAY(nxp_wdog32)
 #define WDT_TEST_MAX_WINDOW 1000U
+#endif
+#if DT_HAS_COMPAT_STATUS_OKAY(xlnx_versal_wwdt)
+#define WDT_TEST_MAX_WINDOW 20000U
+#define TIMEOUTS 0
 #endif
 
 #define WDT_TEST_STATE_IDLE        0
