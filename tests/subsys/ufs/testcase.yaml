@@ -6,7 +6,5 @@ common:
 tests:
   ufs.ufs_api:
     harness: ztest
-    harness_config:
-      fixture: fixture_ufs
     filter: dt_alias_exists("ufs0")
     tags: ufs
