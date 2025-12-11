@@ -4,8 +4,6 @@ common:
     - gpio
   depends_on: gpio
   harness: ztest
-  harness_config:
-    fixture: gpio_loopback
 
 tests:
   drivers.gpio.2pin:
@@ -23,8 +21,6 @@ tests:
 
   drivers.gpio.kv260_r5:
     filter: CONFIG_GPIO_XLNX_PS
-    platform_allow:
-      - kv260_r5
     extra_args: "DTC_OVERLAY_FILE=boards/kv260_r5.overlay"
 
   drivers.gpio.mbv32:
