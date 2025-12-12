@@ -43,7 +43,7 @@ static void to_display_format(const uint8_t *src, size_t size, char *dst)
 	}
 }
 
-static int run_full_read(const struct device *i2c, uint8_t addr,
+static int run_full_read(const struct device *i2c, uint16_t addr,
 			 uint8_t addr_width, const uint8_t *comp_buffer)
 {
 	int ret;
@@ -72,7 +72,7 @@ static int run_full_read(const struct device *i2c, uint8_t addr,
 	return 0;
 }
 
-static int run_partial_read(const struct device *i2c, uint8_t addr,
+static int run_partial_read(const struct device *i2c, uint16_t addr,
 			    uint8_t addr_width, const uint8_t *comp_buffer, unsigned int offset)
 {
 	int ret;
@@ -111,7 +111,7 @@ static int run_partial_read(const struct device *i2c, uint8_t addr,
 	return 0;
 }
 
-static int run_program_read(const struct device *i2c, uint8_t addr,
+static int run_program_read(const struct device *i2c, uint16_t addr,
 			    uint8_t addr_width, unsigned int offset)
 {
 	int ret, i;
@@ -142,6 +142,11 @@ static int run_program_read(const struct device *i2c, uint8_t addr,
 	msg[1].buf = &i2c_buffer[0];
 	msg[1].len = TEST_DATA_SIZE;
 	msg[1].flags = I2C_MSG_WRITE | I2C_MSG_STOP;
+
+	if (addr > I2C_ADDR_7BIT_MAX) {
+		msg[0].flags |= I2C_MSG_ADDR_10_BITS;
+		msg[1].flags |= I2C_MSG_ADDR_10_BITS;
+	}
 
 	ret = i2c_transfer(i2c, &msg[0], 2, addr);
 	zassert_equal(ret, 0, "Failed to write EEPROM");
