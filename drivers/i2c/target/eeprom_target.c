@@ -264,6 +264,8 @@ static int i2c_eeprom_target_init(const struct device *dev)
 		i2c_eeprom_target_##inst##_dev_data = {			\
 			.address_width = DT_INST_PROP_OR(inst,		\
 					address_width, 8),		\
+	IF_ENABLED(DT_INST_PROP_OR(inst, i2c_10_bit_address, 0),	\
+		(.config.flags = I2C_TARGET_FLAGS_ADDR_10_BITS))	\
 		};							\
 									\
 	static uint8_t							\
