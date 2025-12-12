@@ -18,5 +18,5 @@ string
 	default "nrf54h20dk/nrf54h20/cpuapp" if "$(BOARD)${BOARD_QUALIFIERS}" = "nrf54h20dk/nrf54h20/cpurad"
 	default "nrf54l15pdk/nrf54l15/cpuflpr" if $(BOARD) = "nrf54l15pdk"
 	default "stm32h747i_disco/stm32h747xx/m4" if $(BOARD) = "stm32h747i_disco"
-	default "versalnet_rpu" if $(BOARD) = "versalnet_rpu"
-	default "versal2_rpu" if $(BOARD) = "versal2_rpu"
+	default "versalnet_rpu" if SOC_AMD_VERSALNET_RPU
+	default "versal2_rpu" if SOC_AMD_VERSAL2_RPU
