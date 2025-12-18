@@ -31,7 +31,9 @@ static void ipm_mbox_callback(const struct device *mboxdev, mbox_channel_id_t ch
 	const struct device *ipmdev = user_data;
 	struct ipm_mbox_data *ipm_mbox_data = ipmdev->data;
 
-	ipm_mbox_data->callback(ipmdev, ipm_mbox_data->user_data, channel_id, (void *)data->data);
+	void *message = data ? (void *)data->data : NULL;
+
+	ipm_mbox_data->callback(ipmdev, ipm_mbox_data->user_data, channel_id, message);
 }
 
 static int ipm_mbox_send(const struct device *ipmdev, int wait, uint32_t id,
