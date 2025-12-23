@@ -13,9 +13,6 @@
 
 LOG_MODULE_REGISTER(dma_test, LOG_LEVEL_DBG);
 
-/* DMA device label (from your device tree) */
-#define DMA_DEVICE_LABEL DT_LABEL(DT_NODELABEL(dma_controller))
-
 /* Buffer size for DMA transfer */
 #define BUFFER_SIZE	128
 
@@ -23,7 +20,6 @@ LOG_MODULE_REGISTER(dma_test, LOG_LEVEL_DBG);
 static uint8_t src_buffer[CONFIG_DMA_TRANSFER_CHANNEL][BUFFER_SIZE] __aligned(64);
 static uint8_t dst_buffer[CONFIG_DMA_TRANSFER_CHANNEL][BUFFER_SIZE] __aligned(64);
 
-/* DMA completion callback */
 static void dma_callback(const struct device *dev, void *user_data, uint32_t channel, int status)
 {
 	if (status >= 0) {
@@ -64,18 +60,18 @@ int main(void)
 		}
 
 		/* Configure DMA channel */
-		dma_cfg[i].channel_direction = MEMORY_TO_MEMORY; /* Simple mode */
-		dma_cfg[i].source_data_size = 1; /* 1 byte per transfer */
-		dma_cfg[i].dest_data_size = 1; /* 1 byte per transfer */
-		dma_cfg[i].source_burst_length = 1; /* Single transfer per burst */
-		dma_cfg[i].dest_burst_length = 1; /* Single transfer per burst */
-		dma_cfg[i].dma_callback = dma_callback; /* Set completion callback */
-		dma_cfg[i].user_data = NULL; /* No user data */
+		dma_cfg[i].channel_direction = MEMORY_TO_MEMORY;
+		dma_cfg[i].source_data_size = 1;
+		dma_cfg[i].dest_data_size = 1;
+		dma_cfg[i].source_burst_length = 1;
+		dma_cfg[i].dest_burst_length = 1;
+		dma_cfg[i].dma_callback = dma_callback;
+		dma_cfg[i].user_data = NULL;
 
 		/* Configure DMA block */
-		dma_block_cfg[i].block_size = BUFFER_SIZE; /* Transfer size */
-		dma_block_cfg[i].source_address = (uint32_t)src_buffer[i]; /* Source buffer */
-		dma_block_cfg[i].dest_address = (uint32_t)dst_buffer[i]; /* Destination buffer */
+		dma_block_cfg[i].block_size = BUFFER_SIZE;
+		dma_block_cfg[i].source_address = (uint32_t)src_buffer[i];
+		dma_block_cfg[i].dest_address = (uint32_t)dst_buffer[i];
 		dma_block_cfg[i].source_gather_en = 0;
 		dma_block_cfg[i].dest_scatter_en = 0;
 		dma_cfg[i].head_block = &dma_block_cfg[i];
