@@ -458,6 +458,12 @@ static int phy_mii_initialize(const struct device *dev)
 
 		data->gigabit_supported = is_gigabit_supported(dev);
 
+#ifdef CONFIG_ETH_XILINX_AXI_ETHERNET_LITE
+		/* Advertise only 100Mbps speed */
+		LOG_INF("Axi_Ethernet lite: Advertising only 100 Mbps");
+		phy_mii_cfg_link(dev, LINK_HALF_100BASE_T |
+				      LINK_FULL_100BASE_T);
+#else
 		/* Advertise all speeds */
 		phy_mii_cfg_link(dev, LINK_HALF_10BASE_T |
 				      LINK_FULL_10BASE_T |
@@ -465,6 +471,7 @@ static int phy_mii_initialize(const struct device *dev)
 				      LINK_FULL_100BASE_T |
 				      LINK_HALF_1000BASE_T |
 				      LINK_FULL_1000BASE_T);
+#endif
 
 		k_work_init_delayable(&data->monitor_work,
 					monitor_work_handler);
