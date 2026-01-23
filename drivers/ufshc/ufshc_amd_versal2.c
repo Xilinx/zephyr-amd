@@ -964,7 +964,7 @@ static const struct ufshc_driver_api ufshc_versal2_api = {
 											\
 	static const struct ufshc_versal2_config ufshc_versal2_config_##n = {		\
 		.mmio_base = DT_INST_REG_ADDR_BY_IDX(n, 0),				\
-		.core_clk_rate = DT_PROP(DT_INST_PHANDLE_BY_NAME(n, clocks, core_clk),	\
+		.core_clk_rate = DT_PROP(DT_INST_PHANDLE_BY_NAME(n, clocks, core),	\
 					 clock_frequency),				\
 		.irq_id = DT_INST_IRQN(n),						\
 		.reg_iou_slcr = DT_INST_REG_ADDR_BY_IDX(n, 1),				\

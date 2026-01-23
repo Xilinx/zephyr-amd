@@ -89,7 +89,7 @@
 &ufs0 {
 	status = "okay";
 	clocks = <&ufs_core_clk>;
-	clock-names = "core_clk";
+	clock-names = "core";
 
 	ufs_disk0 {
 		compatible = "zephyr,ufs-disk";
