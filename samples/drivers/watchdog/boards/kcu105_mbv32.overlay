@@ -1,5 +1,0 @@
-/ {
-	aliases {
-		watchdog0 = &axi_timebase_wdt_0;
-	};
-};
