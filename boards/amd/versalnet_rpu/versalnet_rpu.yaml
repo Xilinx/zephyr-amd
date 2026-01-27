@@ -16,3 +16,4 @@ supported:
   - spi
   - flash
   - mbox
+  - can
