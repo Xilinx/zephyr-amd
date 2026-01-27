@@ -17,3 +17,4 @@ supported:
   - dma
   - spi
   - flash
+  - can

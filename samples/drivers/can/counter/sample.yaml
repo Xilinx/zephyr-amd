@@ -8,6 +8,19 @@ tests:
       - native_sim
     filter: dt_chosen_enabled("zephyr,canbus") and not dt_compat_enabled("kvaser,pcican")
       and not dt_compat_enabled("infineon,xmc4xxx-can-node")
+      and not dt_compat_enabled("xlnx,canfd-2.0")
+    harness: console
+    harness_config:
+      type: one_line
+      regex:
+        - "Counter received: (.*)"
+  sample.drivers.can.counter.xilinx_canfd:
+    tags: can
+    depends_on: can
+    filter: dt_chosen_enabled("zephyr,canbus") and dt_compat_enabled("xlnx,canfd-2.0")
+    extra_configs:
+      - CONFIG_CAN_FD_MODE=y
+      - CONFIG_LOOPBACK_MODE=y
     harness: console
     harness_config:
       type: one_line
