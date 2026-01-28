@@ -740,7 +740,7 @@ class DeviceHandler(Handler):
         script_param = hardware.script_param
 
         if pre_script:
-            timeout = 30
+            timeout = 60
             if script_param:
                 timeout = script_param.get("pre_script_timeout", timeout)
             self.run_custom_script(pre_script, timeout)
