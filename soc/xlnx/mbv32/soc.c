@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 - 2024 Advanced Micro Devices, Inc.
+ * Copyright (c) 2023 - 2026 Advanced Micro Devices, Inc.
  * Copyright (c) 2023 Alp Sayin <alpsayin@gmail.com>
  * Copyright (c) 2017 Jean-Paul Etienne <fractalclone@gmail.com>
  *
@@ -130,16 +130,18 @@ uint32_t arch_irq_pending_vector(uint32_t ipending)
 	return xlnx_intc_irq_pending_vector();
 }
 
-#ifdef CONFIG_ARCH_CPU_IDLE_CUSTOM
+#ifdef CONFIG_ARCH_HAS_CUSTOM_CPU_IDLE
 void arch_cpu_idle(void)
 {
 	sys_trace_idle();
 	irq_unlock(MSTATUS_IEN);
 }
+#endif /* CONFIG_ARCH_HAS_CUSTOM_CPU_IDLE */
 
+#ifdef CONFIG_ARCH_HAS_CUSTOM_CPU_ATOMIC_IDLE
 void arch_cpu_atomic_idle(unsigned int key)
 {
 	sys_trace_idle();
 	irq_unlock(key);
 }
-#endif /* CONFIG_ARCH_CPU_IDLE_CUSTOM */
+#endif /* CONFIG_ARCH_HAS_CUSTOM_CPU_ATOMIC_IDLE */
