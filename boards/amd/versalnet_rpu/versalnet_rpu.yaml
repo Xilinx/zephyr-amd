@@ -6,6 +6,7 @@ simulation:
 toolchain:
   - zephyr
 testing:
+  timeout_multiplier: 6
   ignore_tags:
     - net
     - bluetooth
