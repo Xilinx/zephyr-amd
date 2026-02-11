@@ -261,11 +261,9 @@ static void spi_cdns_send(const struct device *dev)
 				break;
 			}
 		}
-		if ((spi_context_tx_buf_on(ctx) || spi_context_rx_buf_on(ctx))) {
-			if (data->tx_remain_entry > 0) {
-				data->tx_remain_entry--;
-				data->fifo_diff++;
-			}
+		if (data->tx_remain_entry > 0) {
+			data->tx_remain_entry--;
+			data->fifo_diff++;
 		}
 		spi_context_update_tx(&data->ctx, dfs, 1);
 	}
@@ -319,6 +317,11 @@ static void spi_cdns_recv(const struct device *dev)
 				}
 				break;
 			}
+			if (spi_context_is_slave(ctx)) {
+				spi_context_update_rx(ctx, dfs, 1);
+			}
+		}
+		if (!spi_context_is_slave(ctx)) {
 			spi_context_update_rx(ctx, dfs, 1);
 		}
 		if (data->fifo_diff > 0) {
