@@ -419,7 +419,7 @@ static int spi_nor_access(const struct device *const dev,
 
 	spi_buf_rx[0] = (struct spi_buf){
 		.buf = NULL,
-		.len = 0,
+		.len = is_extended_spi ? 0 : 1,
 		.bus_width = BUS_WIDTH_SPI,
 	};
 
@@ -494,10 +494,7 @@ static int spi_nor_access(const struct device *const dev,
 		return spi_write_dt(&cfg->spi, &tx_set);
 	}
 
-	if (is_extended_spi)
-		return spi_transceive_dt(&cfg->spi, &tx_set, &rx_set);
-
-	return spi_transceive_dt(&cfg->spi, &tx_set, &tx_set);
+	return spi_transceive_dt(&cfg->spi, &tx_set, &rx_set);
 }
 
 #define spi_nor_cmd_read(dev, opcode, dest, length) \
