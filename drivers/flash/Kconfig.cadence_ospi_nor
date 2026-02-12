@@ -21,16 +21,15 @@ config CAD_QSPI_MICRON_MT35X_SUPPORT
 
 config QSPI_LAYOUT_PAGE_SIZE
 	int "Page size to use for FLASH_LAYOUT feature"
-	default 65536
+	default 131072
 	help
 	  When CONFIG_FLASH_PAGE_LAYOUT is used this driver will support that API.
-	  By default the page size corresponds to the sector size (4096) for a NOR
-	  flash memory. Other options may include the 32K-byte erase size (32768),
-	  the block size (65536), or any non-zero multiple of the sector size.
+	  By default the page size corresponds to the sector size (131072) for a NOR
+	  OSPI flash memory.
 
 config CAD_QSPI_NOR_SECTOR_SIZE
 	hex "Cadence Quad SPI sector size"
-	default 0x10000
+	default 0x20000
 	help
 	Set the Cadence Quad SPI sector size.
 
