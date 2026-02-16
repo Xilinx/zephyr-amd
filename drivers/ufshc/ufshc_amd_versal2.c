@@ -889,14 +889,10 @@ static int32_t ufshc_versal2_pwr_change_notify(const struct device *dev, uint8_t
 		}
 	}
 
-	/* For G4 on two lanes, set TXHSADAPTTYPE=1 as initial ADAPT */
+	/* For two lanes, set TXHSADAPTTYPE for faster initialization */
 	if (((final_pwr_mode->lane_tx) == UFS_LANE_2) &&
 	    ((final_pwr_mode->lane_rx) == UFS_LANE_2)) {
-		if (final_pwr_mode->gear_rx == UFS_HS_G4) {
-			adapt_val = PA_INITIAL_ADAPT;
-		} else {
-			adapt_val = PA_NO_ADAPT;
-		}
+		adapt_val = PA_NO_ADAPT;
 		ufshc_fill_uic_cmd(&uic_cmd, ((uint32_t)PA_TXHSADAPTTYPE << 16U), adapt_val, 0U,
 				   (uint32_t)UFSHC_DME_SET_OPCODE);
 		err = ufshc_send_uic_cmd(ufshc, &uic_cmd);
