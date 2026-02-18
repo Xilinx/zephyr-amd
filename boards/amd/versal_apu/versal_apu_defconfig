@@ -18,5 +18,7 @@ CONFIG_UART_CONSOLE=y
 # Enable serial port
 CONFIG_UART_PL011=y
 
-# This should be commented in order to test at EL1 S (EL1 Secure)
-CONFIG_ARMV8_A_NS=y
+# FIXME: QEMU testing runs at EL1 Secure due to TF-A limitation requiring PLM.
+# Upstream fix: https://review.trustedfirmware.org/c/TF-A/trusted-firmware-a/+/46458
+# Once merged, uncomment below to enable EL1 Non-Secure mode:
+#CONFIG_ARMV8_A_NS=y

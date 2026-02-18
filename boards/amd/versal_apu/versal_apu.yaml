@@ -1,6 +1,8 @@
 identifier: versal_apu
 name: AMD Development board for Versal APU
 arch: arm64
+simulation:
+  - name: qemu
 toolchain:
   - zephyr
 testing:
