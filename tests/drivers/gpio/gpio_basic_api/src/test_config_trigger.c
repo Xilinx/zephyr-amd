@@ -31,8 +31,13 @@ ZTEST(after_flash_gpio_config_trigger, test_gpio_config_twice_trigger)
 
 	ret = gpio_pin_configure(dev_out, PIN_OUT, GPIO_DISCONNECTED);
 	if (ret == -ENOTSUP) {
-		TC_PRINT("NOTE: cannot configure pin as disconnected; trying as input\n");
+		TC_PRINT("NOTE: cannot configure pin as disconnected; trying as input"
+			 " with pull-up\n");
 		ret = gpio_pin_configure(dev_out, PIN_OUT, GPIO_INPUT | GPIO_PULL_UP);
+		if (ret == -ENOTSUP) {
+			TC_PRINT("NOTE: pull-up not supported; trying as input\n");
+			ret = gpio_pin_configure(dev_out, PIN_OUT, GPIO_INPUT);
+		}
 	}
 	zassert_ok(ret, "config PIN_OUT failed");
 
@@ -94,8 +99,13 @@ ZTEST(after_flash_gpio_config_trigger, test_gpio_config_trigger)
 
 	ret = gpio_pin_configure(dev_out, PIN_OUT, GPIO_DISCONNECTED);
 	if (ret == -ENOTSUP) {
-		TC_PRINT("NOTE: cannot configure pin as disconnected; trying as input\n");
+		TC_PRINT("NOTE: cannot configure pin as disconnected; trying as input"
+			 " with pull-up\n");
 		ret = gpio_pin_configure(dev_out, PIN_OUT, GPIO_INPUT | GPIO_PULL_UP);
+		if (ret == -ENOTSUP) {
+			TC_PRINT("NOTE: pull-up not supported; trying as input\n");
+			ret = gpio_pin_configure(dev_out, PIN_OUT, GPIO_INPUT);
+		}
 	}
 	zassert_ok(ret, "config PIN_OUT failed");
 
