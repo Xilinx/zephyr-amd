@@ -12,6 +12,7 @@
 #include <zephyr/drivers/sdhc.h>
 #include <zephyr/sd/sd_spec.h>
 #include <zephyr/sd/sd.h>
+#include <zephyr/cache.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/drivers/clock_control.h>
@@ -215,6 +216,15 @@ static int xlnx_sdhc_setup_adma(const struct device *dev, const struct sdhc_data
 		((data->blocks * data->block_size) - (descnum * XLNX_SDHC_DESC_MAX_LENGTH));
 
 	reg->adma_sys_addr = ((uintptr_t)&(dev_data->adma2_descrtbl[0]) & ~(uintptr_t)0x0);
+
+	(void)sys_cache_data_flush_range((void *)dev_data->adma2_descrtbl,
+					sizeof(adma2_descriptor) * adma_table);
+
+	if ((dev_data->transfermode & XLNX_SDHC_TM_DAT_DIR_SEL_MASK)) {
+		(void)sys_cache_data_invd_range(data->data, data->block_size * data->blocks);
+	} else {
+		(void)sys_cache_data_flush_range(data->data, data->block_size * data->blocks);
+	}
 
 	return ret;
 }
