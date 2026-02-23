@@ -46,6 +46,9 @@ west-commands:
       - name: attach
         class: Attach
         help: interactively debug a board
+      - name: rtt
+        class: Rtt
+        help: open an rtt shell
   - file: scripts/west_commands/export.py
     commands:
       - name: zephyr-export
@@ -66,16 +69,6 @@ west-commands:
       - name: bindesc
         class: Bindesc
         help: work with Binary Descriptors
-  - file: scripts/west_commands/robot.py
-    commands:
-      - name: robot
-        class: Robot
-        help: run RobotFramework test suites
-  - file: scripts/west_commands/simulate.py
-    commands:
-      - name: simulate
-        class: Simulate
-        help: simulate board
   - file: scripts/west_commands/lopper_install.py
     commands:
       - name: lopper-install
@@ -86,3 +79,33 @@ west-commands:
       - name: lopper-command
         class: LopperCommand
         help: work with Lopper Commands
+  - file: scripts/west_commands/robot.py
+    commands:
+      - name: robot
+        class: Robot
+        help: run RobotFramework test suites
+  - file: scripts/west_commands/simulate.py
+    commands:
+      - name: simulate
+        class: Simulate
+        help: simulate board
+  - file: scripts/west_commands/sdk.py
+    commands:
+      - name: sdk
+        class: Sdk
+        help: manage Zephyr SDK
+  - file: scripts/west_commands/packages.py
+    commands:
+      - name: packages
+        class: Packages
+        help: manage packages for Zephyr
+  - file: scripts/west_commands/patch.py
+    commands:
+      - name: patch
+        class: Patch
+        help: manage patches for Zephyr modules
+  - file: scripts/west_commands/gtags.py
+    commands:
+      - name: gtags
+        class: Gtags
+        help: create a GNU global tags file for the current workspace

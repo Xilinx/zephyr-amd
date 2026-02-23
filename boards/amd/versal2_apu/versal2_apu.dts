@@ -8,6 +8,8 @@
 #include <arm64/xilinx/versal2_a78.dtsi>
 
 / {
+	compatible = "xlnx,versal2_apu";
+
 	chosen {
 		zephyr,sram = &sram0;
 		zephyr,console = &uart1;
@@ -16,7 +18,7 @@
 };
 
 &cpu0 {
-	 clock-frequency = <100000000>;
+	clock-frequency = <100000000>;
 };
 
 &soc {

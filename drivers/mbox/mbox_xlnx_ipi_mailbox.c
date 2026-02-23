@@ -305,7 +305,7 @@ static int mbox_xlnx_ipi_init(const struct device *pdev)
 	return 0;
 }
 
-static const struct mbox_driver_api mbox_xlnx_ipi_driver_api = {
+static DEVICE_API(mbox, mbox_xlnx_ipi_driver_api) = {
 	.send = mbox_xlnx_ipi_send,
 	.register_callback = mbox_xlnx_ipi_register_callback,
 	.mtu_get = mbox_xlnx_ipi_mtu_get,

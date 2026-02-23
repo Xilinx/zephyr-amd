@@ -127,7 +127,7 @@ int mmc_card_init(struct sd_card *card)
 	/* CMD1 */
 	ret = mmc_send_op_cond(card, ocr_arg);
 	if (ret) {
-		LOG_ERR("Failed to query card OCR");
+		LOG_DBG("Failed to query card OCR");
 		return ret;
 	}
 

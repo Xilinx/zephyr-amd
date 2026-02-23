@@ -404,7 +404,7 @@ static int gpio_xlnx_ps_bank_manage_callback(const struct device *dev,
 }
 
 /* GPIO bank device driver API */
-static const struct gpio_driver_api gpio_xlnx_ps_bank_apis = {
+static DEVICE_API(gpio, gpio_xlnx_ps_bank_apis) = {
 	.pin_configure = gpio_xlnx_ps_pin_configure,
 	.port_get_raw = gpio_xlnx_ps_bank_get,
 	.port_set_masked_raw = gpio_xlnx_ps_bank_set_masked,
@@ -441,9 +441,6 @@ static int gpio_xlnx_ps_bank_init(const struct device *dev)
 
 	sys_write32(~0x0, GPIO_XLNX_PS_BANK_INT_DIS_REG);  /* Disable all interrupts */
 	sys_write32(~0x0, GPIO_XLNX_PS_BANK_INT_STAT_REG); /* Clear all interrupts */
-	sys_write32(0x0, GPIO_XLNX_PS_BANK_OEN_REG);       /* All outputs disabled */
-	sys_write32(0x0, GPIO_XLNX_PS_BANK_DIRM_REG);      /* All pins input */
-	sys_write32(0x0, GPIO_XLNX_PS_BANK_DATA_REG);      /* Zero data register */
 
 	return 0;
 }

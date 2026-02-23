@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025-2026 Advanced Micro Devices, Inc.
+# Copyright (c) 2025 Advanced Micro Devices, Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -12,9 +12,9 @@ config SOC_AMD_VERSALNET_RPU
 	select CPU_HAS_DCLS
 	select GIC_SINGLE_SECURITY_STATE
 	select CPU_HAS_ARM_MPU
+	select ARM_MPU
 	select CLOCK_CONTROL
 	select CLOCK_CONTROL_FIXED_RATE_CLOCK if DT_HAS_FIXED_CLOCK_ENABLED
-	select ARM_MPU
 
 config SOC_AMD_VERSALNET_APU
 	select ARM64

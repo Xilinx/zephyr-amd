@@ -7,4 +7,4 @@ include: mdio-controller.yaml
 
 compatible: xlnx,xps-ethernetlite-3.00.a-mdio
 
-description: MDIO interface of Xilinx AXI Ethernet Lite.
+description: MDIO interface of Xilinx AXI Ethernet Lite (version 3.00.a).

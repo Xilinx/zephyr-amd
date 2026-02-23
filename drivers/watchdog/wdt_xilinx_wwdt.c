@@ -238,7 +238,7 @@ static int wdt_xilinx_wwdt_init(const struct device *dev)
 	return ret;
 }
 
-static const struct wdt_driver_api wdt_xilinx_wwdt_api = {
+static DEVICE_API(wdt, wdt_xilinx_wwdt_api) = {
 	.setup = wdt_xilinx_wwdt_setup,
 	.install_timeout = wdt_xilinx_wwdt_install_timeout,
 	.feed = wdt_xilinx_wwdt_feed,

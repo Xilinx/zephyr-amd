@@ -1,9 +1,12 @@
 identifier: versalnet_apu
 name: AMD Development board for Versal NET APU
 arch: arm
+simulation:
+  - name: qemu
 toolchain:
   - zephyr
 testing:
+  timeout_multiplier: 6
   ignore_tags:
     - net
     - bluetooth

@@ -1,507 +1,826 @@
 /*
- * Copyright (c) 2025 Advanced Micro Devices, Inc.
+ * Copyright (c) 2024 Meta Platforms
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/sys/sys_io.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/pm/device_runtime.h>
+#include <zephyr/sys/util.h>
 
-#define DT_DRV_COMPAT cdns_spi_r1p6
-#include "spi_cdns.h"
-#define LOG_LEVEL CONFIG_SPI_LOG_LEVEL
-LOG_MODULE_REGISTER(cdns_spi, CONFIG_SPI_LOG_LEVEL);
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(spi_cadence, CONFIG_SPI_LOG_LEVEL);
 
 #include "spi_context.h"
 
-struct cdns_spi_config {
-	mm_reg_t base;
-	void (*irq_config_func)(const struct device *dev);
-	uint8_t num_ss_bits;
-	uint32_t is_decoded_cs;
-	uint32_t input_clk;
+/*******************************************************************************
+ * Macro Definition
+ ******************************************************************************/
+/* Register offset address */
+#define SPI_CONF             0x00
+#define SPI_INT_STATUS       0x04
+#define SPI_INT_ENABLE       0x08
+#define SPI_INT_DISABLE      0x0c
+#define SPI_INT_MASK         0x10
+#define SPI_SPI_ENABLE       0x14
+#define SPI_DELAY            0x18
+#define SPI_TX_DATA          0x1c
+#define SPI_RX_DATA          0x20
+#define SPI_SLAVE_IDLE_COUNT 0x24
+#define SPI_TX_THRESHOLD     0x28
+#define SPI_RX_THRESHOLD     0x2c
+
+/* Configuration register bit offset */
+#define SPI_CONF_PCSL_OFFSET 10
+#define SPI_CONF_MRCS_OFFSET 8
+#define SPI_CONF_TWS_OFFSET  6
+#define SPI_CONF_MBRD_OFFSET 3
+
+/* Configuration register bit mask */
+#define SPI_CONF_TXCLR     BIT(20)
+#define SPI_CONF_RXCLR     BIT(19)
+#define SPI_CONF_SPSE      BIT(18)
+#define SPI_CONF_MFGE      BIT(17)
+#define SPI_CONF_MSC       BIT(16)
+#define SPI_CONF_MSE       BIT(15)
+#define SPI_CONF_MCSE      BIT(14)
+#define SPI_CONF_PCSL_MASK GENMASK(13, 10)
+#define SPI_CONF_PSD       BIT(9)
+#define SPI_CONF_MRCS      BIT(8)
+#define SPI_CONF_TWS_MASK  GENMASK(7, 6)
+#define SPI_CONF_MBRD_MASK GENMASK(5, 3)
+#define SPI_CONF_CPHA      BIT(2)
+#define SPI_CONF_CPOL      BIT(1)
+#define SPI_CONF_MSEL      BIT(0)
+
+#define SPI_CONF_INITIAL_VAL (SPI_CONF_PCSL_MASK | SPI_CONF_MCSE | SPI_CONF_MRCS | SPI_CONF_MSEL)
+
+/* Interrupt register bit mask */
+#define SPI_INT_TUF BIT(6)
+#define SPI_INT_RF  BIT(5)
+#define SPI_INT_RNE BIT(4)
+#define SPI_INT_TF  BIT(3)
+#define SPI_INT_TNF BIT(2)
+#define SPI_INT_MF  BIT(1)
+#define SPI_INT_ROF BIT(0)
+
+#define SPI_INT_DEFAULT (SPI_INT_TNF | SPI_INT_ROF | SPI_INT_TUF)
+
+/* SPI enable register bit offset */
+#define SPI_SPI_ENABLE_SPIE BIT(0)
+
+/* Maximum baud rate divisor */
+#define SPI_MBRD_MIN 0
+#define SPI_MBRD_MAX 7
+
+#define SPI_FREQ_LIST_MAX ((SPI_MBRD_MAX + 1) * 2 + 1)
+
+#define SPI_CFG(dev)         ((struct spi_cdns_cfg *)(dev->config))
+#define SPI_REG(dev, offset) ((mem_addr_t)(SPI_CFG(dev)->base + (offset)))
+/*******************************************************************************
+ * Types Definition
+ ******************************************************************************/
+typedef void (*irq_config_func_t)(void);
+
+/**
+ * @brief SPI Driver config information.
+ *
+ * This parameter isn't updated after initialization.
+ *
+ * @param base                         SPI register base address.
+ * @param clock_frequency              Peripheral bus clock
+ * @param ext_clock                    External clock frequency.
+ * @param cs_setup_us                  Array of durations from CS assert to
+ *                                     SCLK in us for slaves.
+ * @param cs_hold_us                   Array of durations from CS assert to
+ *                                     SCLK in us for slaves.
+ * @param irq_config                   Interrupt configuration function.
+ * @param leave_enabled_during_config  Conditionally enable or
+ *                                     disable the SPI bus during
+ *                                     configuration
+ * @param freq_list                    Selectable clock
+ *                                     frequency list.
+ */
+struct spi_cdns_cfg {
+	uint32_t base;
+	uint32_t clock_frequency;
+	uint32_t ext_clock;
+	irq_config_func_t irq_config;
+	uint8_t fifo_width;
+	uint16_t rx_fifo_depth;
+	uint16_t tx_fifo_depth;
 };
 
-struct cdns_spi_data {
-	uint16_t slave;
-	size_t xfer_cnt;
-	uint32_t spi_frequency;
+/**
+ * @brief SPI Driver private data.
+ *
+ * @param ctx             Transceive context information.
+ * @param config          Current SPI controller configuration structure
+ * @param freq            Actual transfer frequency.
+ * @param tx_remain_entry Remain entries to Tx-FIFO.
+ * @param fifo_diff       Difference between Tx-FIFO entry and Rx-FIFO entry.
+ */
+struct spi_cdns_data {
 	struct spi_context ctx;
+	struct spi_config config;
+	uint32_t freq;
+	uint32_t tx_remain_entry;
+	int32_t fifo_diff;
 };
 
-static inline uint32_t cdns_spi_read32(const struct device *dev,
-				       mm_reg_t offset)
-{
-	const struct cdns_spi_config *config = dev->config;
+/*******************************************************************************
+ * Private Functions Code
+ ******************************************************************************/
 
-	return sys_read32(config->base + offset);
+/**
+ * @brief Mask-write 32-bit value to register.
+ *
+ * @param addr register address.
+ * @param mask 32-bit Mask value.
+ * @param value 32-bit value to be written.
+ * @return None.
+ */
+static inline void sys_set_mask32(mem_addr_t addr, uint32_t mask, uint32_t value)
+{
+	uint32_t temp = sys_read32(addr);
+
+	temp &= ~(mask);
+	temp |= value;
+
+	sys_write32(temp, addr);
 }
 
-static inline void cdns_spi_write32(const struct device *dev,
-				    uint32_t value, mm_reg_t offset)
+/**
+ * @brief Check whether to update context configuration.
+ *
+ * @param dev Device structure (In memory) per driver instance
+ * @param config SPI controller configuration structure
+ * @retval true Configuration is same.
+ * @retval false Configuration is differ.
+ */
+static inline bool spi_cdns_context_configured(const struct device *dev,
+					       const struct spi_config *config)
 {
-	const struct cdns_spi_config *config = dev->config;
+	struct spi_cdns_data *data = dev->data;
 
-	sys_write32(value, config->base + offset);
+	if (spi_context_configured(&data->ctx, config) &&
+	    (data->config.frequency == config->frequency) &&
+	    (data->config.operation == config->operation) &&
+	    (data->config.slave == config->slave)) {
+		return true;
+	}
+
+	return false;
 }
 
-static bool cdns_spi_transfer_ongoing(struct cdns_spi_data *data)
+/**
+ * @brief Enable/Disable SPI controller
+ *
+ * @param dev Device structure (In memory) per driver instance
+ * @param on SPI enable flag (True: Enable, False: Disable)
+ * @return None.
+ */
+static inline void spi_cdns_spi_enable(const struct device *dev, bool on)
 {
-	return spi_context_tx_on(&data->ctx) || spi_context_rx_on(&data->ctx);
+	if (on) {
+		sys_set_bits(SPI_REG(dev, SPI_SPI_ENABLE), SPI_SPI_ENABLE_SPIE);
+	} else {
+		sys_clear_bits(SPI_REG(dev, SPI_SPI_ENABLE), SPI_SPI_ENABLE_SPIE);
+	}
 }
 
-static void cdns_spi_xfer_abort(const struct device *dev)
+/**
+ * @brief Assert/Deassert chip select line
+ *
+ * @param dev Device structure (In memory) per driver instance
+ * @param on Assert chip select (True: Assert, False: Deassert)
+ * @return None.
+ */
+static inline void spi_cdns_cs_control(const struct device *dev, bool on)
 {
-	/* Disable the spi device. */
-	cdns_spi_write32(dev, ~CDNS_SPI_ER_ENABLE, CDNS_SPI_ER_OFFSET);
+	struct spi_cdns_data *data = dev->data;
 
-	/* Clear the RX FIFO and drop any data. */
-	while (cdns_spi_read32(dev, CDNS_SPI_SR_OFFSET) & CDNS_SPI_IXR_RXNEMPTY_MASK)
-		cdns_spi_read32(dev, CDNS_SPI_RXD_OFFSET);
-
-	/* Clear the mode fail bit. */
-	cdns_spi_write32(dev, CDNS_SPI_SR_OFFSET,
-			 CDNS_SPI_IXR_MODF_MASK);
-}
-
-static void cdns_spi_cs_cntrl(const struct device *dev,
-			      bool on)
-{
-	struct cdns_spi_data *data = dev->data;
-	const struct cdns_spi_config *config = dev->config;
-	struct spi_context *ctx = &data->ctx;
-	uint32_t config_reg;
-
-	if (IS_ENABLED(CONFIG_SPI_SLAVE) && spi_context_is_slave(ctx)) {
-		/* Skip slave select assert/de-assert in slave mode. */
+	if (IS_ENABLED(CONFIG_SPI_SLAVE) && spi_context_is_slave(&data->ctx)) {
+		/* Skip slave select assert/de-assert in slave mode */
 		return;
 	}
 
-	config_reg = cdns_spi_read32(dev, CDNS_SPI_CR_OFFSET);
 	if (on) {
-		if (config->is_decoded_cs)
-			data->slave = ctx->config->slave << CDNS_SPI_CR_SSCTRL_SHIFT;
-		else
-			data->slave = ((~(1U << ctx->config->slave)) & CDNS_SPI_CR_SSCTRL_MAXIMUM) <<
-				       CDNS_SPI_CR_SSCTRL_SHIFT;
-
-		config_reg &= (uint32_t)(~CDNS_SPI_CR_SSCTRL_MASK);
-		config_reg |= data->slave;
-	} else {
-		config_reg |= (uint32_t)(CDNS_SPI_CR_SSCTRL_MASK);
-	}
-
-	cdns_spi_write32(dev, config_reg, CDNS_SPI_CR_OFFSET);
-}
-
-static void cdns_spi_config_clock_mode(const struct device *dev,
-				       const struct spi_config *spi_cfg)
-{
-	uint32_t ctrl_reg = 0, new_ctrl_reg = 0;
-
-	new_ctrl_reg = cdns_spi_read32(dev, CDNS_SPI_CR_OFFSET);
-	ctrl_reg = new_ctrl_reg;
-
-	new_ctrl_reg &= ~(CDNS_SPI_CR_CPHA | CDNS_SPI_CR_CPOL);
-	if (spi_cfg->operation & SPI_MODE_CPOL) {
-		new_ctrl_reg |= CDNS_SPI_CR_CPOL;
-	}
-
-	if (spi_cfg->operation & SPI_MODE_CPHA) {
-		new_ctrl_reg |= CDNS_SPI_CR_CPHA;
-	}
-
-	if (new_ctrl_reg != ctrl_reg) {
-		cdns_spi_write32(dev, ~CDNS_SPI_ER_ENABLE, CDNS_SPI_ER_OFFSET);
-		cdns_spi_write32(dev, new_ctrl_reg, CDNS_SPI_CR_OFFSET);
-		cdns_spi_write32(dev, CDNS_SPI_ER_ENABLE, CDNS_SPI_ER_OFFSET);
+		uint32_t val = SPI_CONF_PCSL_MASK &
+			       ~(1 << (SPI_CONF_PCSL_OFFSET + data->ctx.config->slave));
+		sys_set_mask32(SPI_REG(dev, SPI_CONF), SPI_CONF_PCSL_MASK, val);
+		k_busy_wait(data->ctx.config->cs.delay);
+	} else if (!(data->ctx.config->operation & SPI_HOLD_ON_CS)) {
+		k_busy_wait(data->ctx.config->cs.delay);
+		sys_set_mask32(SPI_REG(dev, SPI_CONF), SPI_CONF_PCSL_MASK, SPI_CONF_PCSL_MASK);
 	}
 }
 
-static void cdns_spi_setup_transfer(const struct device *dev,
-				    const struct spi_config *spi_cfg)
+/**
+ * @brief Send 1-entry to Tx-FIFO
+ *
+ * @param dev Device structure (In memory) per driver instance
+ * @return None.
+ */
+static void spi_cdns_send(const struct device *dev)
 {
-	struct cdns_spi_data *data = dev->data;
-	uint32_t ctrl_reg, baud_rate_val, frequency;
-
-	frequency = data->spi_frequency;
-	if (data->spi_frequency != spi_cfg->frequency) {
-		ctrl_reg = cdns_spi_read32(dev, CDNS_SPI_CR_OFFSET);
-
-		/* The first valid value is 1. */
-		baud_rate_val = CDNS_SPI_BAUD_DIV_MIN;
-		while ((baud_rate_val < CDNS_SPI_BAUD_DIV_MAX) &&
-		       (frequency / (2 << baud_rate_val)) > spi_cfg->frequency)
-			baud_rate_val++;
-
-		ctrl_reg &= ~CDNS_SPI_CR_BAUD_DIV;
-		ctrl_reg |= baud_rate_val << CDNS_SPI_BAUD_DIV_SHIFT;
-
-		data->spi_frequency = spi_cfg->frequency;
-		cdns_spi_write32(dev, ctrl_reg, CDNS_SPI_CR_OFFSET);
-	}
-}
-
-static int cdns_spi_configure(const struct device *dev,
-			      const struct spi_config *spi_cfg)
-{
-	const struct cdns_spi_config *config = dev->config;
-	struct cdns_spi_data *data = dev->data;
+	const struct spi_cdns_cfg *config = dev->config;
+	struct spi_cdns_data *data = dev->data;
 	struct spi_context *ctx = &data->ctx;
-	uint32_t spicr = 0;
+	uint8_t dfs = SPI_WORD_SIZE_GET(ctx->config->operation) / 8;
+	uint32_t val = 0;
+	int i, loop;
 
-	if (spi_context_configured(ctx, spi_cfg)) {
-		/* Already configured. No need to do it again. */
+	loop = (config->fifo_width / 8) / dfs;
+	for (i = 0; i < loop; i++) {
+		if (spi_context_tx_buf_on(ctx)) {
+			switch (dfs) {
+			case 1:
+				if (config->fifo_width == 8) {
+					val |= UNALIGNED_GET((uint8_t *)ctx->tx_buf);
+				} else if (config->fifo_width == 16) {
+					val |= UNALIGNED_GET((uint8_t *)ctx->tx_buf) << 8 * (1 - i);
+				} else if (config->fifo_width == 32) {
+					val |= UNALIGNED_GET((uint8_t *)ctx->tx_buf) << 8 * (3 - i);
+				}
+				break;
+			case 2:
+				if (config->fifo_width == 16) {
+					val |= UNALIGNED_GET((uint16_t *)ctx->tx_buf);
+				} else if (config->fifo_width == 32) {
+					val |= UNALIGNED_GET((uint16_t *)ctx->tx_buf)
+					       << 16 * (1 - i);
+				}
+				break;
+			case 4:
+				if (config->fifo_width == 32) {
+					val |= UNALIGNED_GET((uint32_t *)ctx->tx_buf);
+				}
+				break;
+			}
+		}
+		if (data->tx_remain_entry > 0) {
+			data->tx_remain_entry--;
+			data->fifo_diff++;
+		}
+		spi_context_update_tx(&data->ctx, dfs, 1);
+	}
+
+	sys_write32(val, SPI_REG(dev, SPI_TX_DATA));
+}
+
+/**
+ * @brief Receive 1-entry from Rx-FIFO
+ *
+ * @param dev Device structure (In memory) per driver instance
+ * @return None.
+ */
+static void spi_cdns_recv(const struct device *dev)
+{
+	const struct spi_cdns_cfg *config = dev->config;
+	struct spi_cdns_data *data = dev->data;
+	struct spi_context *ctx = &data->ctx;
+	uint8_t dfs = SPI_WORD_SIZE_GET(ctx->config->operation) / 8;
+	uint32_t val;
+	int i, loop;
+
+	val = sys_read32(SPI_REG(dev, SPI_RX_DATA));
+
+	loop = (config->fifo_width / 8) / dfs;
+	for (i = 0; i < loop; i++) {
+		if (spi_context_rx_buf_on(ctx)) {
+			switch (dfs) {
+			case 1:
+				if (config->fifo_width == 8) {
+					UNALIGNED_PUT(val & 0xFF, (uint8_t *)ctx->rx_buf);
+				} else if (config->fifo_width == 16) {
+					UNALIGNED_PUT((val >> 8 * (1 - i)) & 0xFF,
+						      (uint8_t *)ctx->rx_buf);
+				} else if (config->fifo_width == 32) {
+					UNALIGNED_PUT((val >> 8 * (3 - i)) & 0xFF,
+						      (uint8_t *)ctx->rx_buf);
+				}
+				break;
+			case 2:
+				if (config->fifo_width == 16) {
+					UNALIGNED_PUT(val & 0xFFFF, (uint16_t *)ctx->rx_buf);
+				} else if (config->fifo_width == 32) {
+					UNALIGNED_PUT((val >> 16 * (1 - i)) & 0xFFFF,
+						      (uint16_t *)ctx->rx_buf);
+				}
+				break;
+			case 4:
+				if (config->fifo_width == 32) {
+					UNALIGNED_PUT(val, (uint32_t *)ctx->rx_buf);
+				}
+				break;
+			}
+			if (spi_context_is_slave(ctx)) {
+				spi_context_update_rx(ctx, dfs, 1);
+			}
+		}
+		if (!spi_context_is_slave(ctx)) {
+			spi_context_update_rx(ctx, dfs, 1);
+		}
+		if (data->fifo_diff > 0) {
+			data->fifo_diff--;
+		}
+	}
+}
+
+/**
+ * @brief Push to Tx-FIFO
+ *
+ * @param dev Device structure (In memory) per driver instance
+ * @return None.
+ */
+static void spi_cdns_push_data(const struct device *dev)
+{
+	const struct spi_cdns_cfg *config = dev->config;
+	struct spi_cdns_data *data = dev->data;
+	uint32_t tx_entry;
+
+	if (spi_context_is_slave(&data->ctx)) {
+		/*
+		 * while tx fifo is not full and there is data to transmit, as we are a target fill
+		 * it up until we are full
+		 */
+		while ((!(sys_read32(SPI_REG(dev, SPI_INT_STATUS)) & SPI_INT_TF)) &&
+		       (data->tx_remain_entry > 0)) {
+			spi_cdns_send(dev);
+		}
+	} else {
+		/*
+		 * We can't fill until we are full as we could chase our tail with waiting until we
+		 * are full, while at the same time data is being sent out faster than we can check
+		 * if we are full
+		 */
+		tx_entry = MIN(config->tx_fifo_depth - data->fifo_diff, data->tx_remain_entry);
+		while (tx_entry > 0) {
+			spi_cdns_send(dev);
+			tx_entry--;
+		}
+	}
+}
+
+/**
+ * @brief Pull from Rx-FIFO
+ *
+ * @param dev Device structure (In memory) per driver instance
+ * @return None.
+ */
+static void spi_cdns_pull_data(const struct device *dev)
+{
+	struct spi_cdns_data *data = dev->data;
+
+	while (data->fifo_diff > 0) {
+		spi_cdns_recv(dev);
+	}
+}
+
+/**
+ * @brief Configure SPI controller
+ *
+ * @param dev Device structure (In memory) per driver instance
+ * @param config SPI controller configuration structure
+ * @retval 0 No errors.
+ * @retval -EINVAL Invalid argument error.
+ * @retval -ENOTSUP Unsupported value error.
+ */
+static int spi_cdns_configure(const struct device *dev, const struct spi_config *config)
+{
+	const struct spi_cdns_cfg *dev_config = dev->config;
+	struct spi_cdns_data *data = dev->data;
+	uint32_t word_size, conf_val, clock_freq, ext_clock_freq;
+	uint8_t baud_rate_div, ext_baud_rate_div;
+
+	if (spi_cdns_context_configured(dev, config)) {
+		/* Nothing to do */
 		return 0;
 	}
 
-	if (spi_cfg->operation & SPI_HALF_DUPLEX) {
-		LOG_ERR("Half-duplex not supported");
+	if (config->operation & (SPI_MODE_LOOP | SPI_TRANSFER_LSB | SPI_LINES_DUAL |
+				 SPI_LINES_QUAD | SPI_LINES_OCTAL)) {
 		return -ENOTSUP;
 	}
 
-	if (spi_cfg->operation & SPI_OP_MODE_SLAVE) {
-		LOG_ERR("Slave mode not supported");
+	/* Active High CS is not supported with hardware CS */
+	if (!spi_cs_is_gpio(config) && (config->operation & SPI_CS_ACTIVE_HIGH)) {
 		return -ENOTSUP;
 	}
 
-	spicr = cdns_spi_read32(dev, CDNS_SPI_CR_OFFSET);
-	if (!(spi_cfg->operation & SPI_OP_MODE_SLAVE)) {
-		spicr |= CDNS_SPI_CR_DEFAULT;
+	if ((config->operation & SPI_OP_MODE_SLAVE) && !IS_ENABLED(CONFIG_SPI_SLAVE)) {
+		LOG_ERR("Kconfig for enable SPI in slave mode is not enabled");
+		return -ENOTSUP;
 	}
 
-	if (config->is_decoded_cs)
-		spicr |= CDNS_SPI_CR_PERI_SEL;
-
-	cdns_spi_write32(dev, spicr, CDNS_SPI_CR_OFFSET);
-
-	data->spi_frequency = config->input_clk;
-
-	/* Configure the clock phase and clock polarity. */
-	cdns_spi_config_clock_mode(dev, spi_cfg);
-
-	ctx->config = spi_cfg;
-
-	return 0;
-}
-
-static int cdns_spi_write_fifo(const struct device *dev)
-{
-	struct cdns_spi_data *data = dev->data;
-	struct spi_context *ctx = &data->ctx;
-	uint32_t txr_cnt = 0U, tx_data, config_reg;
-	size_t xfer_len;
-#ifndef CONFIG_CDNS_SPI_INTR
-	uint32_t status_reg;
-	uint32_t check_transfer;
-#endif
-
-	/* Can only see as far as the current rx buffer. */
-	xfer_len = ctx->tx_len > ctx->rx_len ? ctx->tx_len : ctx->rx_len;
-
-	/* Write TX data */
-	while ((xfer_len > (uint32_t)0) &&
-	       ((uint32_t)txr_cnt < (uint32_t)CDNS_SPI_FIFO_DEPTH)) {
-		if (spi_context_tx_buf_on(ctx)) {
-			tx_data = UNALIGNED_GET((uint32_t *)(ctx->tx_buf));
-		} else {
-			/* No TX buffer. Use dummy TX data. */
-			tx_data = 0U;
-		}
-
-		cdns_spi_write32(dev, tx_data, CDNS_SPI_TXD_OFFSET);
-		spi_context_update_tx(ctx, 1, 1);
-		xfer_len--;
-		++txr_cnt;
+	/* Word Sizes are only compatible with certain fifo widths */
+	word_size = SPI_WORD_SIZE_GET(config->operation);
+	if (((word_size != 8) && (word_size != 16) && (word_size != 32)) ||
+	    (word_size > dev_config->fifo_width) ||
+	    ((dev_config->fifo_width == 24) && (word_size == 16)) ||
+	    ((dev_config->fifo_width == 32) && (word_size == 24))) {
+		return -ENOTSUP;
 	}
 
-	data->xfer_cnt = txr_cnt;
+	data->ctx.config = config;
+	data->config = *config;
 
-#ifdef CONFIG_CDNS_SPI_INTR
-	cdns_spi_write32(dev, CDNS_SPI_IXR_DFLT_MASK, CDNS_SPI_IER_OFFSET);
-#endif
+	conf_val = SPI_CONF_PCSL_MASK | SPI_CONF_MCSE;
+
+	/* Configure for Master or Slave */
+	if (config->operation & SPI_OP_MODE_SLAVE) {
+		conf_val &= ~(SPI_CONF_MSEL);
+	} else {
+		conf_val |= SPI_CONF_MSEL;
+	}
+
+	/* Set the polarity */
+	if (config->operation & SPI_MODE_CPHA) {
+		conf_val |= SPI_CONF_CPHA;
+	} else {
+		conf_val &= ~(SPI_CONF_CPHA);
+	}
+
+	/* Set the phase */
+	if (config->operation & SPI_MODE_CPOL) {
+		conf_val |= SPI_CONF_CPOL;
+	} else {
+		conf_val &= ~(SPI_CONF_CPOL);
+	}
 
 	/*
-	 * If master mode and manual start mode, issue manual start
-	 * command to start the transfer.
+	 * Set clock frequency.
+	 * SPI clock is generated based on pclk or ext_clk, and the frequency closest
+	 * to the value obtained by dividing the two base clocks is selected.
 	 */
-	if (((cdns_spi_read32(dev, CDNS_SPI_CR_OFFSET) & (uint32_t)CDNS_SPI_CR_MANSTRTEN)) &&
-	    ((cdns_spi_read32(dev, CDNS_SPI_CR_OFFSET) & CDNS_SPI_CR_MSTREN))) {
-		config_reg = cdns_spi_read32(dev, CDNS_SPI_CR_OFFSET);
-		config_reg |= CDNS_SPI_CR_MANTXSTRT;
-		cdns_spi_write32(dev, config_reg, CDNS_SPI_CR_OFFSET);
+	clock_freq = dev_config->clock_frequency;
+	baud_rate_div = SPI_MBRD_MIN;
+	while ((baud_rate_div < SPI_MBRD_MAX) &&
+	       ((clock_freq / (2 << baud_rate_div)) > config->frequency)) {
+		baud_rate_div++;
 	}
 
-#ifndef CONFIG_CDNS_SPI_INTR
-	/* Wait for the transfer to finish by polling Tx fifo status. */
-	check_transfer = 0U;
-	while (check_transfer == 0U) {
-		status_reg = cdns_spi_read32(dev, CDNS_SPI_SR_OFFSET);
-		if ((status_reg & CDNS_SPI_IXR_MODF_MASK) != (uint32_t)0U) {
-			/* Deassert the CS line. */
-			cdns_spi_cs_cntrl(dev, false);
-
-			/* Abort target transfer. */
-			cdns_spi_xfer_abort(dev);
-			spi_context_complete(ctx, dev, -ENOTSUP);
-			return -ENOTSUP;
+	if (dev_config->ext_clock) {
+		/* check if there is a closer frequency with ext_clock */
+		ext_clock_freq = dev_config->ext_clock;
+		ext_baud_rate_div = SPI_MBRD_MIN;
+		while ((ext_baud_rate_div < SPI_MBRD_MAX) &&
+		       ((ext_clock_freq / (2 << ext_baud_rate_div)) > config->frequency)) {
+			ext_baud_rate_div++;
 		}
-
-		check_transfer = (status_reg &
-				  CDNS_SPI_IXR_TXOW_MASK);
+		if (config->frequency - (clock_freq / (2 << baud_rate_div)) >
+		    config->frequency - (ext_clock_freq / (2 << ext_baud_rate_div))) {
+			/* ext_clock is closer, so use it instead */
+			baud_rate_div = ext_baud_rate_div;
+			clock_freq = ext_clock_freq;
+			conf_val |= SPI_CONF_MRCS;
+		} else {
+			conf_val &= ~SPI_CONF_MRCS;
+		}
+	} else {
+		conf_val &= ~SPI_CONF_MRCS;
 	}
-#endif
+
+	conf_val &= ~SPI_CONF_MBRD_MASK;
+	conf_val |= baud_rate_div << SPI_CONF_MBRD_OFFSET;
+
+	LOG_DBG("%s: spi baud rate %uHz", dev->name, clock_freq / (2 << baud_rate_div));
+
+	/* Set transfer word size */
+	conf_val &= ~(SPI_CONF_TWS_MASK);
+	conf_val |= ((word_size / 8) - 1) << SPI_CONF_TWS_OFFSET;
+
+	sys_write32(conf_val, SPI_REG(dev, SPI_CONF));
+
 	return 0;
 }
 
-static void cdns_spi_read_fifo(const struct device *dev)
+/**
+ * @brief Interrupt handler
+ *
+ * @param dev Device structure (In memory) per driver instance
+ * @return None.
+ */
+static void spi_cdns_isr(const struct device *dev)
 {
-	struct cdns_spi_data *data = dev->data;
-	struct spi_context *ctx = &data->ctx;
-	uint32_t xfer_cnt = data->xfer_cnt;
-	uint8_t rx_data;
+	const struct spi_cdns_cfg *dev_config = dev->config;
+	struct spi_cdns_data *data = dev->data;
+	int32_t int_status;
+	int error = 0;
 
-	/* Read RX data. */
-	while (xfer_cnt) {
-		rx_data = (uint8_t)cdns_spi_read32(dev, CDNS_SPI_RXD_OFFSET);
+	int_status = sys_read32(SPI_REG(dev, SPI_INT_STATUS));
+	sys_write32(int_status, SPI_REG(dev, SPI_INT_STATUS));
 
-		if (spi_context_rx_buf_on(ctx)) {
-			UNALIGNED_PUT(rx_data, (uint8_t *)ctx->rx_buf);
-		}
-
-		spi_context_update_rx(ctx, 1, 1);
-		--xfer_cnt;
+	if ((int_status & SPI_INT_ROF) && spi_context_rx_buf_on(&data->ctx)) {
+		LOG_ERR("%s: rx fifo overflow", dev->name);
+		error = -EIO;
+		goto complete;
 	}
 
-	spi_context_complete(ctx, dev, 0);
+	if ((int_status & SPI_INT_TUF) && spi_context_tx_buf_on(&data->ctx)) {
+		LOG_ERR("%s: tx fifo underflow", dev->name);
+		error = -EIO;
+		goto complete;
+	}
+
+	if (int_status & SPI_INT_TNF) {
+		if (spi_context_is_slave(&data->ctx)) {
+			/* Fixed delay due to controller limitation with
+			 * RX_NEMPTY incorrect status
+			 * Xilinx AR:65885 contains more details
+			 */
+			k_busy_wait(10);
+		}
+		spi_cdns_pull_data(dev);
+
+		/* Set threshold to one if transfer length
+		 * is less than half FIFO depth
+		 */
+		if (data->tx_remain_entry < dev_config->tx_fifo_depth >> 1) {
+			sys_write32(1, SPI_REG(dev, SPI_TX_THRESHOLD));
+		}
+	}
+
+	if (!spi_context_tx_buf_on(&data->ctx) && !spi_context_rx_buf_on(&data->ctx)) {
+		/* Both TX and RX are done - transfer complete */
+		goto complete;
+	} else {
+		/* Still have data to process - continue transfer */
+		spi_cdns_push_data(dev);
+		sys_write32(SPI_INT_TNF, SPI_REG(dev, SPI_INT_ENABLE));
+	}
+
+	if (data->fifo_diff != 0) {
+		return;
+	}
+
+complete:
+	sys_write32(SPI_INT_DEFAULT, SPI_REG(dev, SPI_INT_DISABLE));
+#if CONFIG_SPI_ASYNC
+	if (data->ctx.asynchronous) {
+		if (spi_cs_is_gpio(data->ctx.config)) {
+			spi_context_cs_control(&data->ctx, false);
+		} else {
+			spi_cdns_cs_control(dev, false);
+		}
+		pm_device_busy_clear(dev);
+	}
+#endif
+
+	spi_context_complete(&data->ctx, dev, error);
 }
 
-static int cdns_spi_transceive(const struct device *dev,
-			       const struct spi_config *spi_cfg,
-			       const struct spi_buf_set *tx_bufs,
-			       const struct spi_buf_set *rx_bufs,
-			       bool asynchronous,
-			       spi_callback_t cb,
-			       void *userdata)
+/**
+ * @brief Initialize SPI driver
+ *
+ * @param dev Device structure (In memory) per driver instance
+ * @return None.
+ */
+static int spi_cdns_init(const struct device *dev)
 {
-	struct cdns_spi_data *data = dev->data;
-	struct spi_context *ctx = &data->ctx;
-	int ret = 0;
+	const struct spi_cdns_cfg *cfg = dev->config;
+	struct spi_cdns_data *data = dev->data;
 
-	if (!tx_bufs && !rx_bufs) {
-		return 0;
-	}
+	cfg->irq_config();
 
-	/* Lock the SPI Context. */
-	spi_context_lock(ctx, asynchronous, cb, userdata, spi_cfg);
+	sys_write32(SPI_CONF_INITIAL_VAL, SPI_REG(dev, SPI_CONF));
 
-	ret = cdns_spi_configure(dev, spi_cfg);
-	if (ret) {
+	/* Disable interrupt */
+	sys_write32(SPI_INT_DEFAULT, SPI_REG(dev, SPI_INT_DISABLE));
+	/* Clear Pending Interrupts */
+	(void)sys_read32(SPI_REG(dev, SPI_INT_STATUS));
+
+	/* TxFIFO and RxFIFO clear */
+	sys_set_mask32(SPI_REG(dev, SPI_CONF), SPI_CONF_TXCLR | SPI_CONF_RXCLR,
+		       SPI_CONF_TXCLR | SPI_CONF_RXCLR);
+
+	spi_cdns_spi_enable(dev, true);
+
+	/* Make sure the context is unlocked */
+	spi_context_unlock_unconditionally(&data->ctx);
+
+	return 0;
+}
+
+/*******************************************************************************
+ * Public Functions Code
+ ******************************************************************************/
+/**
+ * @brief Internal read/write the specified amount of data.
+ *
+ * @param dev Pointer to the device structure for the driver instance.
+ * @param config Pointer to a valid spi_config structure instance.
+ * @param tx_bufs Buffer array where data to be sent originates from, or NULL if none.
+ * @param rx_bufs Buffer array where data to be read will be written to, or NULL if none.
+ * @param asynchronous Asynchronous flag
+ * @param signal A pointer to a valid and ready to be signaled struct k_poll_signal.
+ *
+ * @retval 0 Success.
+ * @retval -EINVAL Invalid argument error.
+ * @retval -ENOTSUP Unsupported value error.
+ * @retval -EBUSY Waiting period timed out.
+ * @retval -EIO Rx FIFO overflow.
+ */
+static int spi_cdns_transceive(const struct device *dev, const struct spi_config *config,
+			       const struct spi_buf_set *tx_bufs, const struct spi_buf_set *rx_bufs,
+			       bool asynchronous, spi_callback_t cb, void *userdata)
+{
+	const struct spi_cdns_cfg *dev_config = dev->config;
+	struct spi_cdns_data *data = dev->data;
+	uint32_t dfs;
+	int ret;
+
+	spi_context_lock(&data->ctx, asynchronous, cb, userdata, config);
+
+	pm_device_busy_set(dev);
+
+	spi_cdns_spi_enable(dev, false);
+
+	ret = spi_cdns_configure(dev, config);
+	if (ret < 0) {
+		spi_cdns_spi_enable(dev, true);
 		goto out;
 	}
 
-	if (!IS_ENABLED(CONFIG_SPI_SLAVE) || !spi_context_is_slave(ctx)) {
-		cdns_spi_setup_transfer(dev, spi_cfg);
+	/* Disable interrupt */
+	sys_write32(SPI_INT_DEFAULT, SPI_REG(dev, SPI_INT_DISABLE));
+	/* Clear Pending Interrupts */
+	(void)sys_read32(SPI_REG(dev, SPI_INT_STATUS));
+
+	/* Reset semaphore for waiting for completion */
+	k_sem_reset(&data->ctx.sync);
+
+	/* TxFIFO and RxFIFO clear */
+	sys_set_mask32(SPI_REG(dev, SPI_CONF), SPI_CONF_TXCLR | SPI_CONF_RXCLR,
+		       SPI_CONF_TXCLR | SPI_CONF_RXCLR);
+	spi_cdns_spi_enable(dev, true);
+
+	data->fifo_diff = 0;
+
+	dfs = SPI_WORD_SIZE_GET(data->ctx.config->operation) / 8;
+	spi_context_buffers_setup(&data->ctx, tx_bufs, rx_bufs, dfs);
+
+	data->tx_remain_entry =
+		MAX(spi_context_total_rx_len(&data->ctx), spi_context_total_tx_len(&data->ctx));
+
+	/* 0 byte transfer */
+	if ((spi_context_total_rx_len(&data->ctx) == 0) &&
+	    (spi_context_total_tx_len(&data->ctx) == 0)) {
+		if (asynchronous) {
+			spi_context_complete(&data->ctx, dev, 0);
+		}
+		goto out;
 	}
 
-	spi_context_buffers_setup(ctx, tx_bufs, rx_bufs, 1);
+	/* Set slave TX fifo threshold */
+	if (spi_context_is_slave(&data->ctx)) {
+		/* Set TX threshold to half FIFO depth
+		 * when transfer size exceeds FIFO depth
+		 */
+		if (data->tx_remain_entry > dev_config->tx_fifo_depth) {
+			sys_write32(dev_config->tx_fifo_depth >> 1, SPI_REG(dev, SPI_TX_THRESHOLD));
+		}
+	}
+	if (spi_cs_is_gpio(data->ctx.config)) {
+		spi_context_cs_control(&data->ctx, true);
+	} else {
+		spi_cdns_cs_control(dev, true);
+	}
 
-	/* Enable the spi device. */
-	cdns_spi_write32(dev, CDNS_SPI_ER_ENABLE, CDNS_SPI_ER_OFFSET);
+	spi_cdns_push_data(dev);
+	sys_write32(SPI_INT_DEFAULT, SPI_REG(dev, SPI_INT_ENABLE));
 
-	/* Assert the CS line. */
-	cdns_spi_cs_cntrl(dev, true);
+	ret = spi_context_wait_for_completion(&data->ctx);
 
-#ifdef CONFIG_CDNS_SPI_INTR
-	do {
-		ret = cdns_spi_write_fifo(dev);
-		if (!ret) {
-			ret = spi_context_wait_for_completion(ctx);
-			if (ret) {
-				break;
-			}
+	if (!asynchronous) {
+		if (spi_cs_is_gpio(data->ctx.config)) {
+			spi_context_cs_control(&data->ctx, false);
 		} else {
-			break;
+			spi_cdns_cs_control(dev, false);
 		}
-	} while (cdns_spi_transfer_ongoing(data));
-#else
-	do {
-		ret = cdns_spi_write_fifo(dev);
-		if (ret) {
-			break;
-		}
-		cdns_spi_read_fifo(dev);
-	} while (cdns_spi_transfer_ongoing(data));
-#endif
-	/* Deassert the CS line. */
-	cdns_spi_cs_cntrl(dev, false);
+		pm_device_busy_clear(dev);
+	}
 
-	/* Disable the spi device. */
-	cdns_spi_write32(dev, ~CDNS_SPI_ER_ENABLE, CDNS_SPI_ER_OFFSET);
-	spi_context_complete(ctx, dev, 0);
+#ifdef CONFIG_SPI_SLAVE
+	if (spi_context_is_slave(&data->ctx) && !ret) {
+		ret = data->ctx.recv_frames;
+	}
+#endif /* CONFIG_SPI_SLAVE */
 
-	ret = spi_context_wait_for_completion(ctx);
 out:
-	spi_context_release(ctx, ret);
+	spi_context_release(&data->ctx, ret);
 
 	return ret;
 }
 
+/**
+ * @brief Read/write the specified amount of data from the SPI driver.
+ *
+ * Note: This function is synchronous.
+ *
+ * @param dev Pointer to the device structure for the driver instance.
+ * @param config Pointer to a valid spi_config structure instance.
+ * @param tx_bufs Buffer array where data to be sent originates from, or NULL if none.
+ * @param rx_bufs Buffer array where data to be read will be written to, or NULL if none.
+ *
+ * @retval 0 Success.
+ * @retval -EINVAL Invalid argument error.
+ * @retval -ENOTSUP Unsupported value error.
+ * @retval -EBUSY Waiting period timed out.
+ * @retval -EIO Rx FIFO overflow.
+ */
+static int spi_cdns_transceive_sync(const struct device *dev, const struct spi_config *config,
+				    const struct spi_buf_set *tx_bufs,
+				    const struct spi_buf_set *rx_bufs)
+{
+	return spi_cdns_transceive(dev, config, tx_bufs, rx_bufs, false, NULL, NULL);
+}
+
 #ifdef CONFIG_SPI_ASYNC
-static int cdns_spi_transceive_async(const struct device *dev,
-				     const struct spi_config *spi_cfg,
+/**
+ * @brief Read/write the specified amount of data from the SPI driver.
+ *
+ * Note: This function is asynchronous.
+ *
+ * @param dev Pointer to the device structure for the driver instance.
+ * @param config Pointer to a valid spi_config structure instance.
+ * @param tx_bufs Buffer array where data to be sent originates from, or NULL if none.
+ * @param rx_bufs Buffer array where data to be read will be written to, or NULL if none.
+ * @param async A pointer to a valid and ready to be signaled struct k_poll_signal.
+ *
+ * @retval 0 Success.
+ * @retval -EINVAL Invalid argument error.
+ * @retval -ENOTSUP Unsupported value error.
+ */
+static int spi_cdns_transceive_async(const struct device *dev, const struct spi_config *config,
 				     const struct spi_buf_set *tx_bufs,
-				     const struct spi_buf_set *rx_bufs,
-				     spi_callback_t cb,
+				     const struct spi_buf_set *rx_bufs, spi_callback_t cb,
 				     void *userdata)
 {
-	return -ENOTSUP;
+	return spi_cdns_transceive(dev, config, tx_bufs, rx_bufs, true, cb, userdata);
 }
 #endif /* CONFIG_SPI_ASYNC */
 
-static int cdns_spi_transceive_blocking(const struct device *dev,
-					const struct spi_config *spi_cfg,
-					const struct spi_buf_set *tx_bufs,
-					const struct spi_buf_set *rx_bufs)
+/**
+ * @brief Release the SPI device locked on by the current config
+ *
+ * @param dev Pointer to the device structure for the driver instance
+ * @param config Pointer to a valid spi_config structure instance.
+ */
+static int spi_cdns_release(const struct device *dev, const struct spi_config *config)
 {
-	return cdns_spi_transceive(dev, spi_cfg, tx_bufs, rx_bufs, false,
-			NULL, NULL);
-}
+	struct spi_cdns_data *data = dev->data;
 
-static int cdns_spi_release(const struct device *dev,
-			    const struct spi_config *spi_cfg)
-{
-	const struct cdns_spi_config *config = dev->config;
-	struct cdns_spi_data *data = dev->data;
-
-	/* Force slave select de-assert. */
-	cdns_spi_write32(dev, BIT_MASK(config->num_ss_bits), CDNS_SPI_CR_OFFSET);
-
-	cdns_spi_write32(dev, ~CDNS_SPI_ER_ENABLE, CDNS_SPI_ER_OFFSET);
-
+	if (spi_cs_is_gpio(data->ctx.config)) {
+		spi_context_cs_control(&data->ctx, false);
+	} else {
+		spi_cdns_cs_control(dev, false);
+	}
 	spi_context_unlock_unconditionally(&data->ctx);
 
 	return 0;
 }
 
-static void cdns_spi_isr(const struct device *dev)
-{
-#ifdef CONFIG_CDNS_SPI_INTR
-	struct cdns_spi_data *data = dev->data;
-	struct spi_context *ctx = &data->ctx;
-	int xstatus = 0;
-	uint32_t isr;
-
-	isr = cdns_spi_read32(dev, CDNS_SPI_SR_OFFSET);
-	cdns_spi_write32(dev, isr, CDNS_SPI_SR_OFFSET);
-	cdns_spi_write32(dev, CDNS_SPI_IXR_TXOW_MASK, CDNS_SPI_IDR_OFFSET);
-
-	if (isr & CDNS_SPI_IXR_MODF_MASK) {
-		/*
-		 * Indicate that transfer is completed, the SPI subsystem will
-		 * identify the error as the remaining bytes to be
-		 * transferred is non-zero.
-		 */
-		cdns_spi_cs_cntrl(dev, false);
-		cdns_spi_xfer_abort(dev);
-
-		xstatus = -EIO;
-		spi_context_complete(ctx, dev, xstatus);
-		return;
-	}
-
-	if (isr & CDNS_SPI_IXR_TXOW_MASK) {
-		cdns_spi_read_fifo(dev);
-
-		if (!cdns_spi_transfer_ongoing(data)) {
-			cdns_spi_write32(dev, CDNS_SPI_IXR_DFLT_MASK, CDNS_SPI_IDR_OFFSET);
-			cdns_spi_cs_cntrl(dev, false);
-			spi_context_complete(ctx, dev, 0);
-		}
-	}
-
-	/* Check for overflow and underflow errors. */
-	if (((isr & CDNS_SPI_IXR_RXOVR_MASK) != 0U) ||
-	    ((isr & CDNS_SPI_IXR_TXUF_MASK) != 0U)) {
-		/*
-		 * The Slave select lines are being manually controlled.
-		 * Disable them because the transfer is complete.
-		 */
-		cdns_spi_cs_cntrl(dev, false);
-
-		xstatus = -EIO;
-		spi_context_complete(ctx, dev, xstatus);
-	}
-#endif
-}
-
-static int cdns_spi_init(const struct device *dev)
-{
-	uint32_t err;
-	const struct cdns_spi_config *config = dev->config;
-	struct cdns_spi_data *data = dev->data;
-
-	cdns_spi_write32(dev, ~CDNS_SPI_ER_ENABLE, CDNS_SPI_ER_OFFSET);
-
-	/* Clear the RX FIFO. */
-	while (cdns_spi_read32(dev, CDNS_SPI_SR_OFFSET) & CDNS_SPI_IXR_RXNEMPTY_MASK) {
-		cdns_spi_read32(dev, CDNS_SPI_RXD_OFFSET);
-	}
-
-	cdns_spi_write32(dev, CDNS_SPI_IXR_MODF_MASK, CDNS_SPI_SR_OFFSET);
-
-	cdns_spi_write32(dev, CDNS_SPI_CR_RESET_STATE, CDNS_SPI_CR_OFFSET);
-	cdns_spi_write32(dev, CDNS_SPI_IXR_ALL, CDNS_SPI_CR_OFFSET);
-	config->irq_config_func(dev);
-
-	err = spi_context_cs_configure_all(&data->ctx);
-	if (err < 0) {
-		return err;
-	}
-
-	spi_context_unlock_unconditionally(&data->ctx);
-
-	return 0;
-}
-
-static const struct spi_driver_api cdns_spi_driver_api = {
-	.transceive = cdns_spi_transceive_blocking,
+/**
+ * SPI driver API registered in Zephyr spi framework
+ */
+static DEVICE_API(spi, spi_cdns_api) = {
+	.transceive = spi_cdns_transceive_sync,
 #ifdef CONFIG_SPI_ASYNC
-	.transceive_async = cdns_spi_transceive_async,
+	.transceive_async = spi_cdns_transceive_async,
 #endif /* CONFIG_SPI_ASYNC */
+	.release = spi_cdns_release,
 #ifdef CONFIG_SPI_RTIO
 	.iodev_submit = spi_rtio_iodev_default_submit,
-#endif
-	.release = cdns_spi_release,
+#endif /* CONFIG_SPI_RTIO */
 };
 
-#define CDNS_SPI_INIT(n)							\
-	static void cdns_spi_config_func_##n(const struct device *dev);		\
-										\
-	static const struct cdns_spi_config cdns_spi_config_##n = {		\
-		.base = DT_INST_REG_ADDR(n),					\
-		.irq_config_func = cdns_spi_config_func_##n,			\
-		.input_clk = DT_INST_PROP_BY_PHANDLE(n, clocks, clock_frequency), \
-		.num_ss_bits = DT_INST_PROP(n, cdns_num_ss_bits),		\
-		.is_decoded_cs = DT_INST_PROP(n, is_decoded_cs),		\
-	};									\
-										\
-	static struct cdns_spi_data cdns_spi_data_##n = {			\
-		SPI_CONTEXT_INIT_LOCK(cdns_spi_data_##n, ctx),			\
-		SPI_CONTEXT_INIT_SYNC(cdns_spi_data_##n, ctx),			\
-		SPI_CONTEXT_CS_GPIOS_INITIALIZE(DT_DRV_INST(n), ctx)		\
-	};									\
-										\
-	DEVICE_DT_INST_DEFINE(n, &cdns_spi_init,				\
-			NULL,							\
-			&cdns_spi_data_##n,					\
-			&cdns_spi_config_##n, POST_KERNEL,			\
-			CONFIG_SPI_INIT_PRIORITY,				\
-			&cdns_spi_driver_api);					\
-										\
-	static void cdns_spi_config_func_##n(const struct device *dev)		\
-	{									\
-		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority),		\
-			cdns_spi_isr,						\
-			DEVICE_DT_INST_GET(n), 0);				\
-		irq_enable(DT_INST_IRQN(n));					\
+#define SPI_CDNS_INIT(n)                                                                           \
+	static void spi_cdns_irq_config_##n(void);                                                 \
+	static struct spi_cdns_data spi_cdns_data_##n = {                                          \
+		SPI_CONTEXT_INIT_LOCK(spi_cdns_data_##n, ctx),                                     \
+		SPI_CONTEXT_INIT_SYNC(spi_cdns_data_##n, ctx),                                     \
+	};                                                                                         \
+	static struct spi_cdns_cfg spi_cdns_cfg_##n = {                                            \
+		.base = DT_INST_REG_ADDR(n),                                                       \
+		.irq_config = spi_cdns_irq_config_##n,                                             \
+		.clock_frequency = DT_INST_PROP(n, clock_frequency),                               \
+		.ext_clock = DT_INST_PROP_OR(n, clock_frequency_ext, 0),                           \
+		.fifo_width = DT_INST_PROP(n, fifo_width),                                         \
+		.tx_fifo_depth = DT_INST_PROP(n, tx_fifo_depth),                                   \
+		.rx_fifo_depth = DT_INST_PROP(n, rx_fifo_depth),                                   \
+	};                                                                                         \
+	SPI_DEVICE_DT_INST_DEFINE(n, spi_cdns_init, NULL, &spi_cdns_data_##n, &spi_cdns_cfg_##n,   \
+				  POST_KERNEL, CONFIG_SPI_INIT_PRIORITY, &spi_cdns_api);           \
+	static void spi_cdns_irq_config_##n(void)                                                  \
+	{                                                                                          \
+		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority), spi_cdns_isr,               \
+			    DEVICE_DT_INST_GET(n), 0);                                             \
+		irq_enable(DT_INST_IRQN(n));                                                       \
 	}
 
-DT_INST_FOREACH_STATUS_OKAY(CDNS_SPI_INIT)
+#define DT_DRV_COMPAT cdns_spi
+DT_INST_FOREACH_STATUS_OKAY(SPI_CDNS_INIT)

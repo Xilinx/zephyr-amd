@@ -1,8 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
- * (C) Copyright 2025, Advanced Micro Devices, Inc.
+ * Copyright (c) 2025, Advanced Micro Devices, Inc.
  *
- * Mubin Sayyed <mubin.sayyed@amd.com>
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 /dts-v1/;
@@ -35,7 +34,6 @@
 		interrupt-parent = <&gic>;
 		status = "okay";
 	};
-
 };
 
 &soc {
@@ -44,10 +42,9 @@
 	gic: interrupt-controller@e2000000 {
 		compatible = "arm,gic-v3", "arm,gic";
 		reg = <0xe2000000 0x10000>,
-					<0xe2100000 0x80000>;
+		      <0xe2100000 0x80000>;
 		interrupt-controller;
 		#interrupt-cells = <4>;
 		status = "okay";
 	};
-
 };

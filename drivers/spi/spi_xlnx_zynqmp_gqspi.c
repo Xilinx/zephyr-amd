@@ -314,7 +314,7 @@ static bool xlnx_zynqmp_gqspi_service_fifos(const struct device *dev)
 			break;
 		}
 
-		tx_bytes = Z_MIN(4, ctx->tx_len);
+		tx_bytes = min(4, ctx->tx_len);
 		for (size_t i = 0; i < tx_bytes; i++) {
 			fifo_data |= ctx->tx_buf[i] << (i * 8);
 		}
@@ -336,7 +336,7 @@ static bool xlnx_zynqmp_gqspi_service_fifos(const struct device *dev)
 		if (isr & GQSPI_INT_RX_FIFO_EMPTY) {
 			break;
 		}
-		rx_bytes = Z_MIN(4, ctx->rx_len);
+		rx_bytes = min(4, ctx->rx_len);
 		fifo_data = xlnx_zynqmp_gqspi_read32(dev, GQSPI_RXD);
 
 		LOG_DBG("RX FIFO data: 0x%08x", fifo_data);
@@ -369,7 +369,7 @@ static int xlnx_zynqmp_gqspi_transceive(const struct device *dev, const struct s
 	struct spi_context *ctx = &data->ctx;
 	uint32_t bus_width;
 	int ret;
-	const size_t num_bufs = Z_MAX(tx_bufs ? tx_bufs->count : 0, rx_bufs ? rx_bufs->count : 0);
+	const size_t num_bufs = max(tx_bufs ? tx_bufs->count : 0, rx_bufs ? rx_bufs->count : 0);
 
 	/* Maximum 30 buffers to avoid filling generic (command) FIFO. */
 	if (num_bufs > GQSPI_GEN_FIFO_DEPTH - 2) {
@@ -422,7 +422,7 @@ static int xlnx_zynqmp_gqspi_transceive(const struct device *dev, const struct s
 				}
 			}
 		}
-		transfer_bytes = Z_MAX(tx_bytes, rx_bytes);
+		transfer_bytes = max(tx_bytes, rx_bytes);
 
 		if (ctx->config->slave == 1) {
 			genfifo_entry |= GQSPI_GEN_FIFO_CS_UPPER_MASK;

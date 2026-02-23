@@ -45,10 +45,9 @@ LOG_MODULE_REGISTER(eth_axi_eth_lite, CONFIG_ETHERNET_LOG_LEVEL);
 
 #define AXI_ETH_LITE_GIE_ENABLE_MASK BIT(31)
 
-struct axi_eth_lite_data;
-
 struct axi_eth_lite_config {
-	void (*config_func)(struct axi_eth_lite_data *data);
+	struct net_eth_mac_config mac_cfg;
+	void (*config_func)(void);
 
 	const struct device *phy;
 	const uintptr_t reg;
@@ -56,7 +55,6 @@ struct axi_eth_lite_config {
 	/* device tree properties */
 	bool has_rx_ping_pong;
 	bool has_tx_ping_pong;
-	bool has_random_mac_address;
 	bool has_interrupt;
 };
 
@@ -68,7 +66,7 @@ struct axi_eth_lite_data {
 	/* used to offload copying an RX packet outside of ISR context */
 	struct k_work rx_work;
 	struct k_spinlock timer_lock;
-	struct net_if *interface;
+	struct net_if *iface;
 
 	const struct axi_eth_lite_config *config;
 
@@ -91,8 +89,8 @@ static inline void axi_eth_lite_write_reg(const struct axi_eth_lite_config *conf
 
 static inline void axi_eth_lite_wait_complete(const struct axi_eth_lite_config *config)
 {
-	while (axi_eth_lite_read_reg(config, AXI_ETH_LITE_TX_PING_CTRL_REG_OFFSET) &
-	       AXI_ETH_LITE_TX_PING_CTRL_BUSY_MASK) {
+	while ((axi_eth_lite_read_reg(config, AXI_ETH_LITE_TX_PING_CTRL_REG_OFFSET) &
+		AXI_ETH_LITE_TX_PING_CTRL_BUSY_MASK) != 0) {
 		k_busy_wait(1);
 	}
 }
@@ -104,7 +102,7 @@ static inline void axi_eth_lite_write_transmit_buffer(const struct axi_eth_lite_
 	uint32_t unaligned_buffer;
 	const int start_offset = buffer_start & (sizeof(uint32_t) - 1);
 
-	if (start_offset) {
+	if (start_offset > 0) {
 		uint8_t *buffer_ptr;
 		/*
 		 * unaligned - write first bytes, keeping whatever was in the buffer already and
@@ -138,7 +136,7 @@ static inline void axi_eth_lite_write_transmit_buffer(const struct axi_eth_lite_
 		data_length -= sizeof(uint32_t);
 	}
 
-	if (data_length) {
+	if (data_length > 0) {
 		memcpy(&unaligned_buffer, data, data_length);
 		axi_eth_lite_write_reg(config, buffer_start, unaligned_buffer);
 	}
@@ -167,7 +165,7 @@ static const struct device *axi_eth_lite_get_phy(const struct device *dev)
 
 static enum ethernet_hw_caps axi_eth_lite_get_caps(const struct device *dev)
 {
-	return ETHERNET_LINK_10BASE_T | ETHERNET_LINK_100BASE_T;
+	return ETHERNET_LINK_10BASE | ETHERNET_LINK_100BASE;
 }
 
 static void axi_eth_lite_phy_link_state_changed(const struct device *phydev,
@@ -181,9 +179,9 @@ static void axi_eth_lite_phy_link_state_changed(const struct device *phydev,
 
 	/* inform the L2 driver whether we can handle packets now */
 	if (state->is_up) {
-		net_eth_carrier_on(data->interface);
+		net_eth_carrier_on(data->iface);
 	} else {
-		net_eth_carrier_off(data->interface);
+		net_eth_carrier_off(data->iface);
 	}
 }
 
@@ -193,14 +191,14 @@ static void axi_eth_lite_iface_init(struct net_if *iface)
 	const struct axi_eth_lite_config *config = net_if_get_device(iface)->config;
 	int err;
 
-	data->interface = iface;
+	data->iface = iface;
 
 	ethernet_init(iface);
 
 	LOG_DBG("Programming initial MAC address!");
 	axi_eth_lite_program_mac_address(config, data);
-	if (net_if_set_link_addr(data->interface, data->mac_addr, sizeof(data->mac_addr),
-				 NET_LINK_ETHERNET)) {
+	if (net_if_set_link_addr(data->iface, data->mac_addr, sizeof(data->mac_addr),
+				 NET_LINK_ETHERNET) < 0) {
 		LOG_ERR("Could not set initial link address!");
 	}
 	LOG_DBG("MAC address set!");
@@ -211,7 +209,7 @@ static void axi_eth_lite_iface_init(struct net_if *iface)
 
 		err = phy_link_callback_set(config->phy, axi_eth_lite_phy_link_state_changed, data);
 
-		if (err) {
+		if (err < 0) {
 			LOG_ERR("Could not set PHY link state changed handler: %d", err);
 		}
 	} else {
@@ -219,7 +217,7 @@ static void axi_eth_lite_iface_init(struct net_if *iface)
 		net_eth_carrier_on(iface);
 	}
 
-	if (CONFIG_ETH_XILINX_AXI_ETHERNET_LITE_TIMER_PERIOD) {
+	if (CONFIG_ETH_XILINX_AXI_ETHERNET_LITE_TIMER_PERIOD > 0) {
 		k_timer_start(&data->rx_timer,
 			      K_MSEC(CONFIG_ETH_XILINX_AXI_ETHERNET_LITE_TIMER_PERIOD),
 			      K_MSEC(CONFIG_ETH_XILINX_AXI_ETHERNET_LITE_TIMER_PERIOD));
@@ -240,20 +238,20 @@ static int axi_eth_lite_set_config(const struct device *dev, enum ethernet_confi
 	switch (type) {
 	case ETHERNET_CONFIG_TYPE_MAC_ADDRESS:
 		memcpy(data->mac_addr, config->mac_address.addr, sizeof(data->mac_addr));
-		LOG_DBG("Programming initial MAC address!");
+		LOG_DBG("Programming MAC address!");
 		axi_eth_lite_program_mac_address(dev_config, data);
 		LOG_DBG("MAC address set!");
-		return net_if_set_link_addr(data->interface, data->mac_addr, sizeof(data->mac_addr),
+		return net_if_set_link_addr(data->iface, data->mac_addr, sizeof(data->mac_addr),
 					    NET_LINK_ETHERNET);
 	default:
 		LOG_ERR("Unsupported configuration set: %u", type);
-		return -EINVAL;
+		return -ENOTSUP;
 	}
 }
 
 static inline bool axi_eth_lite_cursor_advance(struct net_pkt_cursor *cursor)
 {
-	if (!cursor->buf->frags) {
+	if (cursor->buf->frags == NULL) {
 		/* packet complete */
 		return false;
 	}
@@ -289,7 +287,8 @@ static int axi_eth_lite_send(const struct device *dev, struct net_pkt *pkt)
 		(void)k_sem_take(&data->tx_sem, K_FOREVER);
 	}
 
-	if (axi_eth_lite_read_reg(config, control_addr) & AXI_ETH_LITE_TX_PING_CTRL_BUSY_MASK) {
+	if ((axi_eth_lite_read_reg(config, control_addr) & AXI_ETH_LITE_TX_PING_CTRL_BUSY_MASK) !=
+	    0) {
 		/*
 		 * no interrupt -> try to transmit as many packets as the L2 wants, discard them if
 		 * busy; otherwise, semaphore for flow control
@@ -324,11 +323,13 @@ static int axi_eth_lite_send(const struct device *dev, struct net_pkt *pkt)
 	return 0;
 }
 
-static const struct ethernet_api axi_eth_lite_api = {.get_phy = axi_eth_lite_get_phy,
-						     .get_capabilities = axi_eth_lite_get_caps,
-						     .iface_api.init = axi_eth_lite_iface_init,
-						     .set_config = axi_eth_lite_set_config,
-						     .send = axi_eth_lite_send};
+static const struct ethernet_api axi_eth_lite_api = {
+	.get_phy = axi_eth_lite_get_phy,
+	.get_capabilities = axi_eth_lite_get_caps,
+	.iface_api.init = axi_eth_lite_iface_init,
+	.set_config = axi_eth_lite_set_config,
+	.send = axi_eth_lite_send,
+};
 
 static inline int axi_eth_lite_read_to_pkt(const struct axi_eth_lite_config *config,
 					   struct net_pkt *pkt, mem_addr_t buffer_addr,
@@ -425,9 +426,9 @@ static inline void axi_eth_lite_receive(const struct axi_eth_lite_config *config
 		break;
 	}
 
-	pkt = net_pkt_rx_alloc_with_buffer(data->interface, packet_size, AF_UNSPEC, 0, K_NO_WAIT);
+	pkt = net_pkt_rx_alloc_with_buffer(data->iface, packet_size, AF_UNSPEC, 0, K_NO_WAIT);
 
-	if (!pkt) {
+	if (pkt == NULL) {
 		LOG_WRN("Could not alloc RX packet!");
 		goto out;
 	}
@@ -439,12 +440,12 @@ static inline void axi_eth_lite_receive(const struct axi_eth_lite_config *config
 
 	if (packet_size > HEADER_BUF_SIZE_ALIGNED &&
 	    axi_eth_lite_read_to_pkt(config, pkt, buffer_addr,
-				     packet_size - HEADER_BUF_SIZE_ALIGNED)) {
+				     packet_size - HEADER_BUF_SIZE_ALIGNED) < 0) {
 		/* this should never happen, ignore it if it does but warn */
 		LOG_ERR("Could not read data to packet!");
 	}
 
-	if (net_recv_data(data->interface, pkt) < 0) {
+	if (net_recv_data(data->iface, pkt) < 0) {
 		LOG_ERR("Could not receive data!");
 		net_pkt_unref(pkt);
 	}
@@ -502,7 +503,7 @@ static void axi_eth_lite_isr(const struct device *dev)
 
 void axi_eth_lite_timer_fn(struct k_timer *timer)
 {
-	const struct device *dev = timer->user_data;
+	const struct device *dev = k_timer_user_data_get(timer);
 	struct axi_eth_lite_data *data = dev->data;
 
 	/* concurrent invocation of ISR would be a problem */
@@ -513,40 +514,35 @@ void axi_eth_lite_timer_fn(struct k_timer *timer)
 	k_spin_unlock(&data->timer_lock, key);
 }
 
-/* Xilinx OUI (Organizationally Unique Identifier) for MAC */
-#define XILINX_OUI_BYTE_0 0x00
-#define XILINX_OUI_BYTE_1 0x0A
-#define XILINX_OUI_BYTE_2 0x35
-
 static int axi_eth_lite_init(const struct device *dev)
 {
 	const struct axi_eth_lite_config *config = dev->config;
 	struct axi_eth_lite_data *data = dev->data;
 
-	config->config_func(data);
-
-	if (config->has_random_mac_address) {
-		gen_random_mac(data->mac_addr, XILINX_OUI_BYTE_0, XILINX_OUI_BYTE_1,
-			       XILINX_OUI_BYTE_2);
-	}
+	config->config_func();
 
 	if (config->has_interrupt) {
 		axi_eth_lite_write_reg(config, AXI_ETH_LITE_GIE_REG_OFFSET,
 				       AXI_ETH_LITE_GIE_ENABLE_MASK);
 		/* start with 1 for ping-pong, as we can always start 2 transactions concurrently */
-		if (k_sem_init(&data->tx_sem, config->has_tx_ping_pong ? 1 : 0, K_SEM_MAX_LIMIT)) {
+		if (k_sem_init(&data->tx_sem, config->has_tx_ping_pong ? 1 : 0, K_SEM_MAX_LIMIT) <
+		    0) {
 			LOG_ERR("Could not initialize semaphore!");
 			return -EINVAL;
 		}
 	} else {
 		LOG_DBG("No interrupt configured - AXI Ethernet Lite will have to spin!");
 	}
-	if (CONFIG_ETH_XILINX_AXI_ETHERNET_LITE_TIMER_PERIOD) {
+	if (CONFIG_ETH_XILINX_AXI_ETHERNET_LITE_TIMER_PERIOD > 0) {
 		k_timer_init(&data->rx_timer, axi_eth_lite_timer_fn, NULL);
-		data->rx_timer.user_data = (void *)(uintptr_t)dev;
+		k_timer_user_data_set(&data->rx_timer, (void *)(uintptr_t)dev);
 	}
 
 	k_work_init(&data->rx_work, axi_eth_lite_process_rx_packets);
+
+	if (net_eth_mac_load(&config->mac_cfg, data->mac_addr) < 0) {
+		LOG_WRN("Could not determine initial mac address!");
+	}
 
 	return 0;
 }
@@ -559,26 +555,29 @@ static int axi_eth_lite_init(const struct device *dev)
 
 #define AXI_ETH_LITE_INIT(inst)                                                                    \
                                                                                                    \
-	static void axi_eth_lite_config_##inst(struct axi_eth_lite_data *dev)                      \
+	static void axi_eth_lite_config_##inst(void)                                               \
 	{                                                                                          \
 		COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, interrupts), (SETUP_IRQS(inst)),           \
 			    (LOG_DBG("No IRQs defined!")));        \
 	}                                                                                          \
                                                                                                    \
 	static const struct axi_eth_lite_config config_##inst = {                                  \
+		.mac_cfg = NET_ETH_MAC_DT_INST_CONFIG_INIT(inst),                                  \
 		.config_func = axi_eth_lite_config_##inst,                                         \
 		.phy = DEVICE_DT_GET_OR_NULL(DT_INST_PHANDLE(inst, phy_handle)),                   \
 		.reg = DT_REG_ADDR(DT_INST_PARENT(inst)),                                          \
 		.has_rx_ping_pong = DT_INST_PROP(inst, xlnx_rx_ping_pong),                         \
 		.has_tx_ping_pong = DT_INST_PROP(inst, xlnx_tx_ping_pong),                         \
-		.has_random_mac_address = DT_INST_PROP(inst, zephyr_random_mac_address),           \
 		.has_interrupt = DT_INST_NODE_HAS_PROP(inst, interrupts)};                         \
-	static struct axi_eth_lite_data data_##inst = {                                            \
-		.mac_addr = DT_INST_PROP_OR(inst, local_mac_address, {0}),                         \
-		.config = &config_##inst};                                                         \
+	static struct axi_eth_lite_data data_##inst = {.config = &config_##inst};                  \
                                                                                                    \
 	ETH_NET_DEVICE_DT_INST_DEFINE(inst, axi_eth_lite_init, NULL, &data_##inst, &config_##inst, \
 				      CONFIG_ETH_INIT_PRIORITY, &axi_eth_lite_api, NET_ETH_MTU);
 
+/* within the constraints of this driver, these two variants of the IP work the same */
 #define DT_DRV_COMPAT xlnx_xps_ethernetlite_3_00_a_mac
+DT_INST_FOREACH_STATUS_OKAY(AXI_ETH_LITE_INIT);
+
+#undef DT_DRV_COMPAT
+#define DT_DRV_COMPAT xlnx_xps_ethernetlite_1_00_a_mac
 DT_INST_FOREACH_STATUS_OKAY(AXI_ETH_LITE_INIT);

@@ -1,8 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
- * (C) Copyright 2025, Advanced Micro Devices, Inc.
+ * Copyright (c) 2025, Advanced Micro Devices, Inc.
  *
- * Mubin Sayyed <mubin.sayyed@amd.com>
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 /dts-v1/;
@@ -29,15 +28,15 @@
 		watchdog0 = &wwdt0;
 	};
 
-	wwdtclk: wwdt-clk {
-		compatible = "fixed-clock";
-		clock-frequency = <150000000>;
-		#clock-cells = <0>;
-	};
-
 	sdhci_ref_clk: sdhci-ref-clk {
 		compatible = "fixed-clock";
 		clock-frequency = <200000000>;
+		#clock-cells = <0>;
+	};
+
+	wwdtclk: wwdt-clk {
+		compatible = "fixed-clock";
+		clock-frequency = <150000000>;
 		#clock-cells = <0>;
 	};
 
@@ -69,9 +68,7 @@
 
 &spi0 {
 	status = "okay";
-	cdns,num-ss-bits = <3>;
-	is-decoded-cs = <0>;
-	clocks = <&spi_ref_clk>;
+	clock-frequency = <200000000>;
 	flash@0 {
 		compatible = "jedec,spi-nor";
 		reg = <0>;
@@ -95,18 +92,18 @@
 };
 
 &cpu0 {
-	 clock-frequency = <100000000>;
+	clock-frequency = <100000000>;
 };
 
 &soc {
 	sram0: memory@30000 {
 		compatible = "mmio-sram";
-		reg = <0x30000 0x7ffd0000>;
+		reg = <0x30000 DT_SIZE_M(2047)>;
 	};
 
 	tcm: memory@0 {
 		compatible = "mmio-sram";
-		reg = <0x0 0x10000>;
+		reg = <0x0 DT_SIZE_K(64)>;
 	};
 };
 
@@ -124,6 +121,17 @@
 	status = "okay";
 	current-speed = <115200>;
 	clock-frequency = <100000000>;
+};
+
+&sdhci0 {
+	status = "okay";
+	power-delay-ms = <10>;
+	clocks = <&sdhci_ref_clk>;
+};
+
+&sdhci1 {
+	status = "okay";
+	clocks = <&sdhci_ref_clk>;
 };
 
 &wwdt0 {
@@ -154,17 +162,6 @@
 &pmc_wwdt {
 	status = "okay";
 	clocks = <&wwdtclk>;
-};
-
-&sdhci0 {
-	status = "okay";
-	power-delay-ms = <10>;
-	clocks = <&sdhci_ref_clk>;
-};
-
-&sdhci1 {
-	status = "okay";
-	clocks = <&sdhci_ref_clk>;
 };
 
 &adma0 {

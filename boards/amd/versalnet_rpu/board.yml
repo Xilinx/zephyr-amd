@@ -1,5 +1,6 @@
-boards:
-  - name: versalnet_rpu
-    vendor: amd
-    socs:
-      - name: amd_versalnet_rpu
+board:
+  name: versalnet_rpu
+  full_name: Versal NET RPU development board
+  vendor: amd
+  socs:
+  - name: amd_versalnet_rpu

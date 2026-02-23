@@ -20,6 +20,8 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME, LOG_LEVEL);
 
+#include "phy_mii.h"
+
 #define PHY_TI_DP83867_PHYSTS                 0x11
 #define PHY_TI_DP83867_PHYSTS_LINKSTATUS_MASK BIT(10)
 #define PHY_TI_DP83867_PHYSTS_LINKDUPLEX_MASK BIT(13)
@@ -68,6 +70,7 @@ struct ti_dp83867_config {
 	uint32_t ti_rx_internal_delay;
 	uint32_t ti_tx_internal_delay;
 	enum dp83826_interface phy_iface;
+	enum phy_link_speed default_speeds;
 #if DT_ANY_INST_HAS_PROP_STATUS_OKAY(reset_gpios)
 	const struct gpio_dt_spec reset_gpio;
 #endif
@@ -219,24 +222,24 @@ static int phy_ti_dp83867_get_link(const struct device *dev, struct phy_link_sta
 			PHY_TI_DP83867_PHYSTS_LINKSPEED_SHIFT) {
 		case PHY_TI_DP83867_PHYSTS_LINKSPEED_1000M:
 			if (duplex) {
-				new_state.speed = LINK_FULL_1000BASE_T;
+				new_state.speed = LINK_FULL_1000BASE;
 			} else {
-				new_state.speed = LINK_HALF_1000BASE_T;
+				new_state.speed = LINK_HALF_1000BASE;
 			}
 			break;
 		case PHY_TI_DP83867_PHYSTS_LINKSPEED_100M:
 			if (duplex) {
-				new_state.speed = LINK_FULL_100BASE_T;
+				new_state.speed = LINK_FULL_100BASE;
 			} else {
-				new_state.speed = LINK_HALF_100BASE_T;
+				new_state.speed = LINK_HALF_100BASE;
 			}
 			break;
 		case PHY_TI_DP83867_PHYSTS_LINKSPEED_10M:
 		default:
 			if (duplex) {
-				new_state.speed = LINK_FULL_10BASE_T;
+				new_state.speed = LINK_FULL_10BASE;
 			} else {
-				new_state.speed = LINK_HALF_10BASE_T;
+				new_state.speed = LINK_HALF_10BASE;
 			}
 			break;
 		}
@@ -292,7 +295,6 @@ static int phy_ti_dp83867_reset(const struct device *dev)
 	if (ret < 0) {
 		LOG_ERR("Error writing phy (%d) basic control register", config->addr);
 	}
-
 #if DT_ANY_INST_HAS_PROP_STATUS_OKAY(reset_gpios)
 done:
 #endif /* DT_ANY_INST_HAS_PROP_STATUS_OKAY(reset_gpios) */
@@ -307,12 +309,18 @@ done:
 	return ret;
 }
 
-static int phy_ti_dp83867_cfg_link(const struct device *dev, enum phy_link_speed speeds)
+static int phy_ti_dp83867_cfg_link(const struct device *dev, enum phy_link_speed speeds,
+				   enum phy_cfg_link_flag flags)
 {
 	const struct ti_dp83867_config *config = dev->config;
 	struct ti_dp83867_data *data = dev->data;
 	int ret;
-	uint32_t anar, cfg1;
+	__maybe_unused uint32_t val;
+
+	if (flags & PHY_FLAG_AUTO_NEGOTIATION_DISABLED) {
+		LOG_ERR("Disabling auto-negotiation is not supported by this driver");
+		return -ENOTSUP;
+	}
 
 	/* Lock mutex */
 	ret = k_mutex_lock(&data->mutex, K_FOREVER);
@@ -359,60 +367,15 @@ static int phy_ti_dp83867_cfg_link(const struct device *dev, enum phy_link_speed
 	k_work_cancel_delayable(&data->phy_monitor_work);
 #endif /* DT_ANY_INST_HAS_PROP_STATUS_OKAY(int_gpios) */
 
-	/* Read ANAR register to write back */
-	ret = phy_ti_dp83867_read(dev, MII_ANAR, &anar);
-	if (ret) {
-		LOG_ERR("Error reading phy (%d) advertising register", config->addr);
+	ret = phy_mii_set_anar_reg(dev, speeds);
+	if ((ret < 0) && (ret != -EALREADY)) {
+		LOG_ERR("Error setting ANAR register for phy (%d)", config->addr);
 		goto done;
 	}
 
-	/* Read CFG1 register to write back */
-	ret = phy_ti_dp83867_read(dev, MII_1KTCR, &cfg1);
-	if (ret) {
-		LOG_ERR("Error reading phy (%d) 1000Base-T control register", config->addr);
-		goto done;
-	}
-
-	/* Setup advertising register */
-	if (speeds & LINK_FULL_100BASE_T) {
-		anar |= MII_ADVERTISE_100_FULL;
-	} else {
-		anar &= ~MII_ADVERTISE_100_FULL;
-	}
-	if (speeds & LINK_HALF_100BASE_T) {
-		anar |= MII_ADVERTISE_100_HALF;
-	} else {
-		anar &= ~MII_ADVERTISE_100_HALF;
-	}
-	if (speeds & LINK_FULL_10BASE_T) {
-		anar |= MII_ADVERTISE_10_FULL;
-	} else {
-		anar &= ~MII_ADVERTISE_10_FULL;
-	}
-	if (speeds & LINK_HALF_10BASE_T) {
-		anar |= MII_ADVERTISE_10_HALF;
-	} else {
-		anar &= ~MII_ADVERTISE_10_HALF;
-	}
-
-	/* Setup 1000Base-T control register */
-	if (speeds & LINK_FULL_1000BASE_T) {
-		cfg1 |= MII_ADVERTISE_1000_FULL;
-	} else {
-		cfg1 &= ~MII_ADVERTISE_1000_FULL;
-	}
-
-	/* Write capabilities to advertising register */
-	ret = phy_ti_dp83867_write(dev, MII_ANAR, anar);
-	if (ret) {
-		LOG_ERR("Error writing phy (%d) advertising register", config->addr);
-		goto done;
-	}
-
-	/* Write capabilities to 1000Base-T control register */
-	ret = phy_ti_dp83867_write(dev, MII_1KTCR, cfg1);
-	if (ret) {
-		LOG_ERR("Error writing phy (%d) 1000Base-T control register", config->addr);
+	ret = phy_mii_set_c1kt_reg(dev, speeds);
+	if ((ret < 0) && (ret != -EALREADY)) {
+		LOG_ERR("Error setting C1KT register for phy (%d)", config->addr);
 		goto done;
 	}
 
@@ -615,10 +578,13 @@ skip_int_gpio:
 #endif /* DT_ANY_INST_HAS_PROP_STATUS_OKAY(int_gpios) */
 	phy_ti_dp83867_monitor_work_handler(&data->phy_monitor_work.work);
 
+	/* Advertise default speeds */
+	phy_ti_dp83867_cfg_link(dev, config->default_speeds, 0);
+
 	return 0;
 }
 
-static const struct ethphy_driver_api ti_dp83867_phy_api = {
+static DEVICE_API(ethphy, ti_dp83867_phy_api) = {
 	.get_link = phy_ti_dp83867_get_link,
 	.cfg_link = phy_ti_dp83867_cfg_link,
 	.link_cb_set = phy_ti_dp83867_link_cb_set,
@@ -647,6 +613,7 @@ static const struct ethphy_driver_api ti_dp83867_phy_api = {
 		.ti_tx_internal_delay = DT_INST_PROP_OR(n, ti_tx_internal_delay,                   \
 							 DP83867_RGMII_RX_CLK_DELAY_INV),          \
 		.phy_iface = DT_INST_ENUM_IDX(n, ti_interface_type),                               \
+		.default_speeds = PHY_INST_GENERATE_DEFAULT_SPEEDS(n),				   \
 		RESET_GPIO(n) INTERRUPT_GPIO(n)};                                                  \
                                                                                                    \
 	static struct ti_dp83867_data ti_dp83867_##n##_data;                                       \

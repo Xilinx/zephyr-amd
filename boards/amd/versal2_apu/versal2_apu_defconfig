@@ -1,4 +1,3 @@
-# The Zephyr build from this defconfig is expected to boot from
 # Xilinx Arm Trusted Firmware (ATF).
 # Boot Flow is: Boot PDI -> TF-A -> Zephyr
 

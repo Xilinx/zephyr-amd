@@ -7,12 +7,14 @@
 identifier: mbv32
 name: MBV32 softcore CPU
 type: mcu
-simulation: qemu
+simulation:
+  - name: qemu
 arch: riscv
 toolchain:
   - zephyr
 ram: 2097152
 testing:
+  timeout_multiplier: 6
   ignore_tags:
     - bluetooth
     - coredump
