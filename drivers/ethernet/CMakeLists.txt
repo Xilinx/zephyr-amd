@@ -15,7 +15,6 @@ zephyr_library_sources_ifdef(CONFIG_ETH_GECKO
 
 zephyr_library_sources_ifdef(CONFIG_ETH_XLNX_GEM
 	eth_xlnx_gem.c
-	phy_xlnx_gem.c
 	)
 
 zephyr_library_sources_ifdef(CONFIG_ETH_DWMAC		eth_dwmac.c)
