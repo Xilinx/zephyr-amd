@@ -23,14 +23,15 @@ static const struct arm_mmu_region mmu_regions[] = {
 
 	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(amd_versal2_ufs, DEVICE_ATTR)
 
-	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(xlnx_versal_8_9a, DEVICE_ATTR)
-
 	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(amd_versal2_dma_1_0,
 						DEVICE_ATTR)
 
 	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(xlnx_versal_wwdt, DEVICE_ATTR)
 
 	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(xlnx_mbox_versal_ipi_mailbox,
+						DEVICE_ATTR)
+
+	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(xlnx_gem_controller,
 						DEVICE_ATTR)
 };
 

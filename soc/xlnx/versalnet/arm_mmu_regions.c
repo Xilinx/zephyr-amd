@@ -23,8 +23,6 @@ static const struct arm_mmu_region mmu_regions[] = {
 
 	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(cdns_i2c, DEVICE_ATTR)
 
-	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(xlnx_versal_8_9a, DEVICE_ATTR)
-
 	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(xlnx_zynqmp_dma_1_0,
 						DEVICE_ATTR)
 
@@ -33,17 +31,15 @@ static const struct arm_mmu_region mmu_regions[] = {
 	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(xlnx_mbox_versal_ipi_mailbox,
 						DEVICE_ATTR)
 
-	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(xlnx_versal_wwdt, DEVICE_ATTR)
-
-	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(xlnx_versal_ospi_1_0,
-						DEVICE_ATTR)
-
 	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(cdns_spi_r1p6, DEVICE_ATTR)
 
 	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(snps_designware_i3c,
 						DEVICE_ATTR)
 
 	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(xlnx_canfd_2_0, DEVICE_ATTR)
+
+	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(xlnx_gem_controller,
+						DEVICE_ATTR)
 };
 
 const struct arm_mmu_config mmu_config = {
