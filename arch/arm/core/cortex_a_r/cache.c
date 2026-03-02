@@ -50,9 +50,18 @@ void arch_dcache_enable(void)
 {
 	uint32_t val;
 
+	val = __get_SCTLR();
+
+	/* Check if cache is already enabled */
+	if (val & SCTLR_C_Msk) {
+		/* Cache already enabled - clean and invalidate to ensure coherency */
+		L1C_CleanInvalidateDCacheAll();
+		return;
+	}
+
+	/* Cache not enabled - safe to invalidate (no dirty lines) */
 	arch_dcache_invd_all();
 
-	val = __get_SCTLR();
 	val |= SCTLR_C_Msk;
 	barrier_dsync_fence_full();
 	__set_SCTLR(val);
