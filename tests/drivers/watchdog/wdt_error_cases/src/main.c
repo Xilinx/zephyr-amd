@@ -1050,6 +1050,47 @@ ZTEST(wdt_coverage, test_09c_wdt_feed_stall)
 	}
 }
 
+#if defined(CONFIG_XILINX_WINDOW_WATCHDOG)
+/**
+ * @brief wdt_feed() negative test for Xilinx Window Watchdog
+ *
+ * Confirm that wdt_feed() returns
+ * -ENOTSUP when called during the closed window (first window).
+ * Window watchdog protocol requires feeding only during the open window.
+ *
+ */
+ZTEST(wdt_coverage, test_09w_wdt_feed_in_closed_window)
+{
+	int ret, ch_id;
+
+	m_cfg_wdt0.callback = NULL;
+	m_cfg_wdt0.flags = DEFAULT_FLAGS;
+	/* Configure window: closed window = 5000ms, open window = 5000ms (10000-5000) */
+	m_cfg_wdt0.window.max = 10000U;
+	m_cfg_wdt0.window.min = 5000U;
+
+	ch_id = wdt_install_timeout(wdt, &m_cfg_wdt0);
+	zassert_true(ch_id >= 0, "Watchdog install error, got unexpected value of %d", ch_id);
+	TC_PRINT("Configured WDT channel %d\n", ch_id);
+
+	ret = wdt_setup(wdt, DEFAULT_OPTIONS);
+	zassert_true(ret == 0, "Watchdog setup error, got unexpected value of %d", ret);
+	TC_PRINT("Test has failed if there is reset after this line\n");
+
+	/* Try to feed immediately - should fail because we're in the closed window */
+	ret = wdt_feed(wdt, ch_id);
+	zassert_true(ret == -ENOTSUP,
+		     "wdt_feed() in closed window shall return -ENOTSUP (-134), got unexpected "
+		     "value of %d",
+		     ret);
+
+	/* Wait for closed window to expire to prevent reset */
+	k_msleep(5500);
+
+	/* Assumption: wdt_disable() is called after each test */
+}
+#endif /* CONFIG_XILINX_WINDOW_WATCHDOG */
+
 /**
  * @brief wdt_install_timeout() negative test
  *
