@@ -6,8 +6,6 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Known current limitations / TODOs:
- * - Only supports 32-bit addresses in buffer descriptors, therefore
- *   the ZynqMP APU (Cortex-A53 cores) may not be fully supported.
  * - Hardware timestamps not considered.
  * - VLAN tags not considered.
  * - Wake-on-LAN interrupt not supported.
@@ -398,7 +396,7 @@ static int eth_xlnx_gem_send(const struct device *dev, struct net_pkt *pkt)
 	}
 
 	curr_bd_idx = first_bd_idx = dev_data->tx_bd_ring.next_to_use;
-	reg_ctrl = (uint32_t)(&dev_data->tx_bd_ring.first_bd[curr_bd_idx].ctrl);
+	reg_ctrl = (uintptr_t)(&dev_data->tx_bd_ring.first_bd[curr_bd_idx].ctrl);
 
 	dev_data->tx_bd_ring.next_to_use = (first_bd_idx + bds_reqd) %
 					  dev_conf->tx_bd_count;
@@ -436,7 +434,7 @@ static int eth_xlnx_gem_send(const struct device *dev, struct net_pkt *pkt)
 		if (tx_data_remaining > dev_conf->tx_buffer_size) {
 			/* Switch to next BD */
 			curr_bd_idx = (curr_bd_idx + 1) % dev_conf->tx_bd_count;
-			reg_ctrl = (uint32_t)(&dev_data->tx_bd_ring.first_bd[curr_bd_idx].ctrl);
+			reg_ctrl = (uintptr_t)(&dev_data->tx_bd_ring.first_bd[curr_bd_idx].ctrl);
 		}
 
 		tx_data_remaining -= (tx_data_remaining < dev_conf->tx_buffer_size) ?
@@ -455,6 +453,9 @@ static int eth_xlnx_gem_send(const struct device *dev, struct net_pkt *pkt)
 	 * flush all involved TX BDs' buffers from the L1 cache to
 	 * regular memory along the way.
 	 */
+	/* Ensure all descriptor writes (address/length/control)
+	 * are visible to hardware before clearing TX_BD_USED ownership bit. */
+	barrier_dmem_fence_full();
 	reg_val &= ~ETH_XLNX_GEM_TX_BD_USED_BIT;
 	sys_write32(reg_val, reg_ctrl);
 #ifdef CONFIG_DCACHE
@@ -466,7 +467,7 @@ static int eth_xlnx_gem_send(const struct device *dev, struct net_pkt *pkt)
 	while (curr_bd_idx != first_bd_idx) {
 		curr_bd_idx = (curr_bd_idx != 0) ? (curr_bd_idx - 1) :
 			      (dev_conf->tx_bd_count - 1);
-		reg_ctrl = (uint32_t)(&dev_data->tx_bd_ring.first_bd[curr_bd_idx].ctrl);
+		reg_ctrl = (uintptr_t)(&dev_data->tx_bd_ring.first_bd[curr_bd_idx].ctrl);
 		reg_val = sys_read32(reg_ctrl);
 		reg_val &= ~ETH_XLNX_GEM_TX_BD_USED_BIT;
 		sys_write32(reg_val, reg_ctrl);
@@ -476,6 +477,9 @@ static int eth_xlnx_gem_send(const struct device *dev, struct net_pkt *pkt)
 						    dev_conf->tx_buffer_size);
 #endif
 	}
+
+	/* Ensure all TX descriptors have visibility before signaling STARTTX to hardware. */
+	barrier_dmem_fence_full();
 
 	/* Set the start TX bit in the gem.net_ctrl register */
 	reg_val  = sys_read32(dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
@@ -824,7 +828,9 @@ static void eth_xlnx_gem_configure_clocks(const struct device *dev,
 	uint32_t div1;
 	uint32_t target = 2500000; /* default prevents 'may be uninitialized' warning */
 	uint32_t tmp;
+#if defined(CONFIG_SOC_XILINX_ZYNQMP) || defined(CONFIG_SOC_FAMILY_XILINX_ZYNQ7000)
 	uint32_t clk_ctrl_reg;
+#endif
 
 	if (PHY_LINK_IS_SPEED_1000M(state->speed)) {
 		target = 125000000; /* Target frequency: 125 MHz */
@@ -1154,6 +1160,14 @@ static void eth_xlnx_gem_set_initial_dmacr(const struct device *dev)
 	reg_val |= ((uint32_t)dev_conf->ahb_burst_length &
 		   ETH_XLNX_GEM_DMACR_AHB_BURST_LENGTH_MASK);
 
+#ifdef CONFIG_64BIT
+	/* [30] DMA address bus width: 1 = 64-bit */
+	reg_val |= ETH_XLNX_GEM_DMACR_DMA_ADDR_BUS_WIDTH_BIT;
+#else
+	/* [30] DMA address bus width: 0 = 32-bit */
+	reg_val &= ~ETH_XLNX_GEM_DMACR_DMA_ADDR_BUS_WIDTH_BIT;
+#endif
+
 	/* Write the assembled register contents */
 	sys_write32(reg_val, dev_conf->base_addr + ETH_XLNX_GEM_DMACR_OFFSET);
 }
@@ -1187,19 +1201,44 @@ static void eth_xlnx_gem_configure_buffers(const struct device *dev)
 	bdptr = dev_data->rx_bd_ring.first_bd;
 
 	for (buf_iter = 0; buf_iter < (dev_conf->rx_bd_count - 1); buf_iter++) {
-		uint32_t addr = (uint32_t)dev_data->first_rx_buffer +
+		uintptr_t addr = (uintptr_t)dev_data->first_rx_buffer +
 				(buf_iter * dev_conf->rx_buffer_size);
 		/* Clear 'used' bit -> BD is owned by the controller */
-		bdptr->addr = addr & ~(ETH_XLNX_GEM_RX_BD_USED_BIT | ETH_XLNX_GEM_RX_BD_WRAP_BIT);
-		bdptr->ctrl = 0x00000000;
+#ifdef CONFIG_64BIT
+		bdptr->addr_hi = (uint32_t)((addr >> ETH_XLNX_GEM_ADDR_SHIFT_32BIT) &
+					     ETH_XLNX_GEM_ADDR_MASK_32BIT);
+		/* Ensure addr_hi is visible before low addr word containing ownership bits. */
+		barrier_dmem_fence_full();
+		bdptr->addr = ((uint32_t)(addr & ETH_XLNX_GEM_ADDR_MASK_32BIT) &
+			       ~(ETH_XLNX_GEM_RX_BD_WRAP_BIT |
+				 ETH_XLNX_GEM_RX_BD_USED_BIT));
+#else
+		bdptr->addr = ((uint32_t)addr &
+			       ~(ETH_XLNX_GEM_RX_BD_WRAP_BIT |
+				 ETH_XLNX_GEM_RX_BD_USED_BIT));
+#endif
+		bdptr->ctrl = ETH_XLNX_GEM_RESERVED_CTRL_INIT;
 		++bdptr;
 	}
 
-	uint32_t last_rx_addr = (uint32_t)dev_data->first_rx_buffer +
+	uintptr_t last_rx_addr = (uintptr_t)dev_data->first_rx_buffer +
 				(buf_iter * dev_conf->rx_buffer_size);
-	bdptr->addr = (((uint32_t)last_rx_addr) & ~ETH_XLNX_GEM_RX_BD_USED_BIT) |
-		      ETH_XLNX_GEM_RX_BD_WRAP_BIT;
-	bdptr->ctrl = 0x00000000;
+#ifdef CONFIG_64BIT
+	bdptr->addr_hi = (uint32_t)((last_rx_addr >> ETH_XLNX_GEM_ADDR_SHIFT_32BIT) &
+				     ETH_XLNX_GEM_ADDR_MASK_32BIT);
+	/* Ensure addr_hi is visible before low addr word containing ownership bits. */
+	barrier_dmem_fence_full();
+	bdptr->addr = ((uint32_t)(last_rx_addr & ETH_XLNX_GEM_ADDR_MASK_32BIT) &
+		       ~(ETH_XLNX_GEM_RX_BD_WRAP_BIT |
+			 ETH_XLNX_GEM_RX_BD_USED_BIT));
+#else
+	bdptr->addr = ((uint32_t)last_rx_addr &
+		       ~(ETH_XLNX_GEM_RX_BD_WRAP_BIT |
+			 ETH_XLNX_GEM_RX_BD_USED_BIT));
+#endif
+	/* Set the 'wrap' bit for the last RX BD */
+	bdptr->addr |= ETH_XLNX_GEM_RX_BD_WRAP_BIT;
+	bdptr->ctrl = ETH_XLNX_GEM_RESERVED_CTRL_INIT;
 
 	/*
 	 * Set initial TX BD data -> comp. Zynq-7000 TRM, Chapter 16.3.5,
@@ -1212,14 +1251,34 @@ static void eth_xlnx_gem_configure_buffers(const struct device *dev)
 	bdptr = dev_data->tx_bd_ring.first_bd;
 
 	for (buf_iter = 0; buf_iter < (dev_conf->tx_bd_count - 1); buf_iter++) {
-		bdptr->addr = (uint32_t)dev_data->first_tx_buffer +
+		uintptr_t addr = (uintptr_t)dev_data->first_tx_buffer +
 			      (buf_iter * dev_conf->tx_buffer_size);
+		/* Set TX buffer address */
+#ifdef CONFIG_64BIT
+		bdptr->addr_hi = (uint32_t)((addr >> ETH_XLNX_GEM_ADDR_SHIFT_32BIT) &
+					     ETH_XLNX_GEM_ADDR_MASK_32BIT);
+		/* Ensure addr_hi is visible before low addr word containing ownership bits. */
+		barrier_dmem_fence_full();
+		bdptr->addr = (uint32_t)(addr & ETH_XLNX_GEM_ADDR_MASK_32BIT);
+#else
+		bdptr->addr = (uint32_t)addr;
+#endif
 		bdptr->ctrl = ETH_XLNX_GEM_TX_BD_USED_BIT;
 		++bdptr;
 	}
 
-	bdptr->addr = (uint32_t)dev_data->first_tx_buffer +
-		      (buf_iter * (uint32_t)dev_conf->tx_buffer_size);
+	uintptr_t last_tx_addr = (uintptr_t)dev_data->first_tx_buffer +
+			(buf_iter * dev_conf->tx_buffer_size);
+#ifdef CONFIG_64BIT
+	bdptr->addr_hi = (uint32_t)((last_tx_addr >> ETH_XLNX_GEM_ADDR_SHIFT_32BIT) &
+				     ETH_XLNX_GEM_ADDR_MASK_32BIT);
+	/* Ensure addr_hi is visible before low addr word containing ownership bits. */
+	barrier_dmem_fence_full();
+	bdptr->addr = (uint32_t)(last_tx_addr & ETH_XLNX_GEM_ADDR_MASK_32BIT);
+#else
+	bdptr->addr = (uint32_t)last_tx_addr;
+#endif
+
 	bdptr->ctrl = (ETH_XLNX_GEM_TX_BD_WRAP_BIT | ETH_XLNX_GEM_TX_BD_USED_BIT);
 
 #ifdef CONFIG_SOC_XILINX_ZYNQMP
@@ -1256,10 +1315,27 @@ static void eth_xlnx_gem_configure_buffers(const struct device *dev)
 	 * registers must point to the single dummy tie-off BD for
 	 * both the RX and TX direction.
 	 */
-	sys_write32((uint32_t)dev_data->rx_bd_ring.first_bd,
+
+	/* Write RX queue base address */
+	uintptr_t rx_base = (uintptr_t)dev_data->rx_bd_ring.first_bd;
+	sys_write32((uint32_t)(rx_base & ETH_XLNX_GEM_ADDR_MASK_32BIT),
 		    dev_conf->base_addr + ETH_XLNX_GEM_RXQBASE_OFFSET);
-	sys_write32((uint32_t)dev_data->tx_bd_ring.first_bd,
+#ifdef CONFIG_64BIT
+	sys_write32((uint32_t)(((uint64_t)rx_base >> ETH_XLNX_GEM_ADDR_SHIFT_32BIT) &
+			     ETH_XLNX_GEM_ADDR_MASK_32BIT),
+		    dev_conf->base_addr + ETH_XLNX_GEM_RX1QBASEH_OFFSET);
+#endif
+
+	/* Write TX queue base address */
+	uintptr_t tx_base = (uintptr_t)dev_data->tx_bd_ring.first_bd;
+	sys_write32((uint32_t)(tx_base & ETH_XLNX_GEM_ADDR_MASK_32BIT),
 		    dev_conf->base_addr + ETH_XLNX_GEM_TXQBASE_OFFSET);
+#ifdef CONFIG_64BIT
+	sys_write32((uint32_t)(((uint64_t)tx_base >> ETH_XLNX_GEM_ADDR_SHIFT_32BIT) &
+			     ETH_XLNX_GEM_ADDR_MASK_32BIT),
+		    dev_conf->base_addr + ETH_XLNX_GEM_TX1QBASEH_OFFSET);
+#endif
+
 #ifdef CONFIG_SOC_XILINX_ZYNQMP
 	sys_write32(0x00000000, dev_conf->base_addr + ETH_XLNX_GEM_RX1QBASEH_OFFSET);
 	sys_write32((uint32_t)dev_data->rx_bd_ring.tie_off_bd,
@@ -1268,6 +1344,13 @@ static void eth_xlnx_gem_configure_buffers(const struct device *dev)
 	sys_write32((uint32_t)dev_data->tx_bd_ring.tie_off_bd,
 		    dev_conf->base_addr + ETH_XLNX_GEM_TX1QBASEL_OFFSET);
 #endif /* CONFIG_SOC_XILINX_ZYNQMP */
+
+#ifdef CONFIG_SOC_AMD_VERSAL2
+	sys_write32(ETH_XLNX_GEM_QUEUE_DISABLE_BIT,
+		    dev_conf->base_addr + ETH_XLNX_GEM_RX1QBASEL_OFFSET);
+	sys_write32(ETH_XLNX_GEM_QUEUE_DISABLE_BIT,
+		    dev_conf->base_addr + ETH_XLNX_GEM_TX1QBASEL_OFFSET);
+#endif /* CONFIG_SOC_AMD_VERSAL2 */
 }
 
 /**
@@ -1332,8 +1415,8 @@ static void eth_xlnx_gem_handle_rx_pending(const struct device *dev)
 	while (1) {
 		curr_bd_idx = dev_data->rx_bd_ring.next_to_process;
 		first_bd_idx = last_bd_idx = curr_bd_idx;
-		reg_addr = (uint32_t)(&dev_data->rx_bd_ring.first_bd[first_bd_idx].addr);
-		reg_ctrl = (uint32_t)(&dev_data->rx_bd_ring.first_bd[first_bd_idx].ctrl);
+		reg_addr = (uintptr_t)(&dev_data->rx_bd_ring.first_bd[first_bd_idx].addr);
+		reg_ctrl = (uintptr_t)(&dev_data->rx_bd_ring.first_bd[first_bd_idx].ctrl);
 
 		/*
 		 * Basic precondition checks for the current BD's
@@ -1347,6 +1430,9 @@ static void eth_xlnx_gem_handle_rx_pending(const struct device *dev)
 			 */
 			break;
 		}
+		/* After observing HW ownership marker (RX_BD_USED), ensure dependent
+		 * descriptor fields (ctrl, length, flags) are read with correct ordering. */
+		barrier_dmem_fence_full();
 		reg_val = sys_read32(reg_ctrl);
 		if ((reg_val & ETH_XLNX_GEM_RX_BD_START_OF_FRAME_BIT) == 0) {
 			/*
@@ -1365,7 +1451,7 @@ static void eth_xlnx_gem_handle_rx_pending(const struct device *dev)
 		 * of the received packet which spans multiple buffers.
 		 */
 		do {
-			reg_ctrl = (uint32_t)(&dev_data->rx_bd_ring.first_bd[last_bd_idx].ctrl);
+			reg_ctrl = (uintptr_t)(&dev_data->rx_bd_ring.first_bd[last_bd_idx].ctrl);
 			reg_val  = sys_read32(reg_ctrl);
 			rx_data_length = rx_data_remaining =
 					 (reg_val & ETH_XLNX_GEM_RX_BD_FRAME_LENGTH_MASK);
@@ -1405,15 +1491,12 @@ static void eth_xlnx_gem_handle_rx_pending(const struct device *dev)
 		 */
 		do {
 			if (pkt != NULL) {
+				uintptr_t rx_addr = dev_data->rx_bd_ring.first_bd[curr_bd_idx].addr &
+						    ETH_XLNX_GEM_RX_BD_BUFFER_ADDR_MASK;
 #ifdef CONFIG_DCACHE
-				sys_cache_data_invd_range(
-					(void *)(dev_data->rx_bd_ring.first_bd[curr_bd_idx].addr &
-					ETH_XLNX_GEM_RX_BD_BUFFER_ADDR_MASK),
-					dev_conf->rx_buffer_size);
+				sys_cache_data_invd_range((void *)rx_addr, dev_conf->rx_buffer_size);
 #endif
-				net_pkt_write(pkt, (const void *)
-					      (dev_data->rx_bd_ring.first_bd[curr_bd_idx].addr &
-					      ETH_XLNX_GEM_RX_BD_BUFFER_ADDR_MASK),
+				net_pkt_write(pkt, (const void *)rx_addr,
 					      (rx_data_remaining < dev_conf->rx_buffer_size) ?
 					      rx_data_remaining : dev_conf->rx_buffer_size);
 			}
@@ -1425,9 +1508,12 @@ static void eth_xlnx_gem_handle_rx_pending(const struct device *dev)
 			 * processed, on to the next BD -> preserve the RX BD's
 			 * 'wrap' bit & address, but clear the 'used' bit.
 			 */
-			reg_addr = (uint32_t)(&dev_data->rx_bd_ring.first_bd[curr_bd_idx].addr);
+			reg_addr = (uintptr_t)(&dev_data->rx_bd_ring.first_bd[curr_bd_idx].addr);
 			reg_val	 = sys_read32(reg_addr);
 			reg_val &= ~ETH_XLNX_GEM_RX_BD_USED_BIT;
+			/* Before releasing RX descriptor back to HW
+			 * (clearing RX_BD_USED), ensure packet extraction is complete. */
+			barrier_dmem_fence_full();
 			sys_write32(reg_val, reg_addr);
 
 			curr_bd_idx = (curr_bd_idx + 1) % dev_conf->rx_bd_count;
@@ -1517,8 +1603,11 @@ static void eth_xlnx_gem_handle_tx_done(const struct device *dev)
 	}
 
 	curr_bd_idx = first_bd_idx = dev_data->tx_bd_ring.next_to_process;
-	reg_ctrl = (uint32_t)(&dev_data->tx_bd_ring.first_bd[curr_bd_idx].ctrl);
+	reg_ctrl = (uintptr_t)(&dev_data->tx_bd_ring.first_bd[curr_bd_idx].ctrl);
 	reg_val  = sys_read32(reg_ctrl);
+	/* After the TX completion interrupt, ensure the first TX BD status read
+	 * is ordered before checking dependent fields (e.g., LAST_BIT). */
+	barrier_dmem_fence_full();
 
 	do {
 		++bds_processed;
@@ -1547,8 +1636,11 @@ static void eth_xlnx_gem_handle_tx_done(const struct device *dev)
 			break;
 		}
 		curr_bd_idx = (curr_bd_idx + 1) % dev_conf->tx_bd_count;
-		reg_ctrl = (uint32_t)(&dev_data->tx_bd_ring.first_bd[curr_bd_idx].ctrl);
+		reg_ctrl = (uintptr_t)(&dev_data->tx_bd_ring.first_bd[curr_bd_idx].ctrl);
 		reg_val  = sys_read32(reg_ctrl);
+		/* After reading next TX BD status from HW, ensure each advanced
+		 * TX BD status read is ordered before processing. */
+		barrier_dmem_fence_full();
 	} while (bd_is_last == 0 && curr_bd_idx != first_bd_idx);
 
 	if (curr_bd_idx == first_bd_idx && bd_is_last == 0) {

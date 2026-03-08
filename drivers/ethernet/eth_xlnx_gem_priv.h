@@ -18,8 +18,19 @@
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/irq.h>
 #include <zephyr/linker/section_tags.h>
+#include <zephyr/sys/barrier.h>
+
+#ifdef CONFIG_64BIT
+#define ETH_XLNX_GEM_DMABD_MINIMUM_ALIGNMENT        64U
+#else
+#define ETH_XLNX_GEM_DMABD_MINIMUM_ALIGNMENT        4U
+#endif
 
 #define ETH_XLNX_BUFFER_ALIGNMENT			4 /* RX/TX buffer alignment (in bytes) */
+
+#define ETH_XLNX_GEM_ADDR_MASK_32BIT                0xFFFFFFFFU
+#define ETH_XLNX_GEM_RESERVED_CTRL_INIT             0x00000000U
+#define ETH_XLNX_GEM_ADDR_SHIFT_32BIT               32U
 
 /* Buffer descriptor (BD) related defines */
 
@@ -199,12 +210,14 @@
 #define ETH_XLNX_GEM_LADDR4L_OFFSET			0x000000A0
 #define ETH_XLNX_GEM_LADDR4H_OFFSET			0x000000A4
 #define ETH_XLNX_GEM_DESIGN_CFG5_OFFSET			0x00000290
-#ifdef CONFIG_SOC_XILINX_ZYNQMP
+#if defined(CONFIG_SOC_XILINX_ZYNQMP) || defined(CONFIG_SOC_AMD_VERSAL2)
 #define ETH_XLNX_GEM_TX1QBASEL_OFFSET			0x00000440
 #define ETH_XLNX_GEM_TX1QBASEH_OFFSET			0x000004C8
 #define ETH_XLNX_GEM_RX1QBASEL_OFFSET			0x00000480
 #define ETH_XLNX_GEM_RX1QBASEH_OFFSET			0x000004D4
-#endif /* CONFIG_SOC_XILINX_ZYNQMP */
+/* Queue disable bit for Versal2 - bit 0 in queue pointer registers */
+#define ETH_XLNX_GEM_QUEUE_DISABLE_BIT			BIT(0)
+#endif /* CONFIG_SOC_XILINX_ZYNQMP || CONFIG_SOC_AMD_VERSAL2 */
 
 /*
  * Masks for clearing registers during initialization:
@@ -310,6 +323,7 @@
 
 /*
  * gem.dma_cfg:
+ * [30]       DMA address bus width: 0 = 32-bit, 1 = 64-bit
  * [24]       Discard packets when AHB resource is unavailable
  * [23 .. 16] RX buffer size, n * 64 bytes
  * [11]       Enable/disable TCP|UDP/IP TX checksum offload
@@ -320,6 +334,7 @@
  * [04 .. 00] AHB fixed burst length for DMA data operations
  */
 #define ETH_XLNX_GEM_DMACR_DISCNOAHB_BIT		0x01000000
+#define ETH_XLNX_GEM_DMACR_DMA_ADDR_BUS_WIDTH_BIT	BIT(30)
 #define ETH_XLNX_GEM_DMACR_RX_BUF_MASK			0x000000FF
 #define ETH_XLNX_GEM_DMACR_RX_BUF_SHIFT			16
 #define ETH_XLNX_GEM_DMACR_TCP_CHKSUM_BIT		0x00000800
@@ -504,7 +519,7 @@ struct eth_xlnx_gem##port##_dma_area_layout {\
 /* DMA memory area instantiation macro */
 #define ETH_XLNX_GEM_DMA_AREA_INST(port) \
 static struct eth_xlnx_gem##port##_dma_area_layout eth_xlnx_gem##port##_dma_area\
-	__aligned(4096);
+	__aligned(ETH_XLNX_GEM_DMABD_MINIMUM_ALIGNMENT);
 
 /* Interrupt configuration function macro */
 #define ETH_XLNX_GEM_CONFIG_IRQ_FUNC(port) \
@@ -584,14 +599,29 @@ enum eth_xlnx_ahb_burst_length {
  * points to the start of a RX or TX buffer within the DMA memory
  * area, while the control word is used for buffer status exchange
  * with the controller.
+ *
+ * On 64-bit systems (CONFIG_64BIT): 4 words layout
+ *   [Word 0] addr       - Buffer address bits [31:0]
+ *   [Word 1] ctrl       - Control and Status bits
+ *   [Word 2] addr_hi    - Buffer address bits [63:32]
+ *   [Word 3] reservd    - Reserved for future use
+ *
+ * On 32-bit systems: 2 words layout
+ *   [Word 0] addr       - Buffer address [31:0]
+ *   [Word 1] ctrl       - Control and Status bits
  */
 struct eth_xlnx_gem_bd {
-	/* TODO for Cortex-A53: 64-bit addressing */
 	/* TODO: timestamping support */
 	/* Buffer physical address (absolute address) */
 	uint32_t		addr;
 	/* Buffer control word (different contents for RX and TX) */
 	uint32_t		ctrl;
+#ifdef CONFIG_64BIT
+	/* Buffer physical address high word (bits [63:32]) */
+	uint32_t		addr_hi;
+	/* Reserved for future */
+	uint32_t		reservd;
+#endif
 };
 
 /**
