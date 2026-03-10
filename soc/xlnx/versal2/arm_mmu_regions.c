@@ -33,6 +33,13 @@ static const struct arm_mmu_region mmu_regions[] = {
 
 	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(xlnx_gem_controller,
 						DEVICE_ATTR)
+
+	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(xlnx_canfd_2_0, DEVICE_ATTR)
+
+	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(cdns_i2c, DEVICE_ATTR)
+
+	MMU_REGION_DT_COMPAT_FOREACH_FLAT_ENTRY(xlnx_zynqmp_rtc, DEVICE_ATTR)
+
 };
 
 const struct arm_mmu_config mmu_config = {
