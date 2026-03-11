@@ -10,13 +10,13 @@ set(QEMU_ARCH xilinx-riscv32)
 set(QEMU_CPU_TYPE_${ARCH} riscv32)
 
 set(QEMU_FLAGS_${ARCH}
-	-machine riscv-fdt
-	-hw-dtb ${PROJECT_BINARY_DIR}/${BOARD}-qemu.dtb
-	-nographic
-	-net nic,netdev=eth0 -netdev user,id=eth0
-	-m 2g
+  -machine riscv-fdt
+  -hw-dtb ${PROJECT_BINARY_DIR}/${BOARD}-qemu.dtb
+  -nographic
+  -net nic,netdev=eth0 -netdev user,id=eth0
+  -m 2g
 )
 
 set(QEMU_KERNEL_OPTION
-	-device loader,cpu-num=0,file=\$<TARGET_FILE:\${logical_target_for_zephyr_elf}>
+  -device loader,cpu-num=0,file=\$<TARGET_FILE:\${logical_target_for_zephyr_elf}>
 )
