@@ -515,9 +515,8 @@ ZTEST(wdt_basic_test_suite, test_wdt)
 	if (m_testcase_index == 4U) {
 #if !defined(CONFIG_XILINX_WINDOW_WATCHDOG)
 		zassert_true(test_wdt_bad_window_max() == TC_PASS);
-#else
-		m_testcase_index++;
 #endif
+		m_testcase_index++;
 	}
 	if (m_testcase_index > 4) {
 		m_state = WDT_TEST_STATE_IDLE;
