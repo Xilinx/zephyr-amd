@@ -1089,6 +1089,171 @@ ZTEST(wdt_coverage, test_09w_wdt_feed_in_closed_window)
 
 	/* Assumption: wdt_disable() is called after each test */
 }
+
+/**
+ * @brief wdt_install_timeout() test for Xilinx Window Watchdog - Above HW limit
+ *
+ * Validate that driver correctly rejects timeout configurations that exceed
+ * hardware capability (>28.6s per window with 150MHz clock).
+ */
+ZTEST(wdt_coverage, test_09x_wdt_timeout_exceeds_hw_limit)
+{
+	int ret;
+
+	TC_PRINT("\n=== Testing timeout exceeding hardware limit ===\n");
+
+	m_cfg_wdt0.callback = NULL;
+	m_cfg_wdt0.flags = DEFAULT_FLAGS;
+	/* 35 second timeout - exceeds max hardware capability */
+	m_cfg_wdt0.window.max = 35000U;
+	m_cfg_wdt0.window.min = 3500U; /* 10% closed */
+
+	TC_PRINT("Testing 35s timeout (10%% closed / 90%% open)...\n");
+	TC_PRINT("  Closed window: 3500ms, Open window: 31500ms\n");
+
+	ret = wdt_install_timeout(wdt, &m_cfg_wdt0);
+	zassert_true(ret == -EINVAL,
+		     "Driver should reject timeout with open window exceeding HW limit, "
+		     "expected -EINVAL (-22), got %d", ret);
+}
+
+/**
+ * @brief wdt_feed() comprehensive test for Xilinx Window Watchdog
+ *
+ * Test various timeout durations with different closed/open window combinations:
+ * - 28s, 27s: Near hardware limit
+ * - 15s, 14s: Mid-range timeouts
+ * - 6s, 5s: Short timeouts
+ * Validates feeding behavior in both closed and open windows.
+ */
+ZTEST(wdt_coverage, test_09y_wdt_comprehensive_window_tests)
+{
+	int ret, ch_id;
+
+	/* Test different timeout values and window split percentages */
+	struct {
+		uint32_t timeout_ms;
+		uint8_t closed_pct;
+		uint8_t open_pct;
+		const char *description;
+		bool should_pass;
+	} test_cases[] = {
+		/* 28 second timeout tests - near hardware limit */
+		{28000, 2, 98, "28s: 2% closed / 98% open", true},
+		{28000, 10, 90, "28s: 10% closed / 90% open", true},
+		{28000, 50, 50, "28s: 50% closed / 50% open", true},
+		{28000, 90, 10, "28s: 90% closed / 10% open", true},
+		{28000, 98, 2, "28s: 98% closed / 2% open", true},
+
+		/* 27 second timeout tests */
+		{27000, 1, 99, "27s: 1% closed / 99% open", true},
+		{27000, 5, 95, "27s: 5% closed / 95% open", true},
+		{27000, 25, 75, "27s: 25% closed / 75% open", true},
+		{27000, 50, 50, "27s: 50% closed / 50% open", true},
+		{27000, 75, 25, "27s: 75% closed / 25% open", true},
+		{27000, 95, 5, "27s: 95% closed / 5% open", true},
+
+		/* 15 second timeout tests */
+		{15000, 1, 99, "15s: 1% closed / 99% open", true},
+		{15000, 10, 90, "15s: 10% closed / 90% open", true},
+		{15000, 33, 67, "15s: 33% closed / 67% open", true},
+		{15000, 50, 50, "15s: 50% closed / 50% open", true},
+		{15000, 67, 33, "15s: 67% closed / 33% open", true},
+		{15000, 90, 10, "15s: 90% closed / 10% open", true},
+
+		/* 14 second timeout tests */
+		{14000, 5, 95, "14s: 5% closed / 95% open", true},
+		{14000, 20, 80, "14s: 20% closed / 80% open", true},
+		{14000, 50, 50, "14s: 50% closed / 50% open", true},
+		{14000, 80, 20, "14s: 80% closed / 20% open", true},
+		{14000, 95, 5, "14s: 95% closed / 5% open", true},
+
+		/* 6 second timeout tests */
+		{6000, 2, 98, "6s: 2% closed / 98% open", true},
+		{6000, 15, 85, "6s: 15% closed / 85% open", true},
+		{6000, 50, 50, "6s: 50% closed / 50% open", true},
+		{6000, 85, 15, "6s: 85% closed / 15% open", true},
+
+		/* 5 second timeout tests */
+		{5000, 1, 99, "5s: 1% closed / 99% open", true},
+		{5000, 10, 90, "5s: 10% closed / 90% open", true},
+		{5000, 50, 50, "5s: 50% closed / 50% open", true},
+		{5000, 90, 10, "5s: 90% closed / 10% open", true},
+	};
+
+	int total = ARRAY_SIZE(test_cases);
+
+	TC_PRINT("\n=== Starting comprehensive window tests (%d configurations) ===\n", total);
+
+	for (int i = 0; i < total; i++) {
+		uint32_t total_timeout = test_cases[i].timeout_ms;
+		uint32_t closed_window = (total_timeout * test_cases[i].closed_pct) / 100;
+		uint32_t open_window = total_timeout - closed_window;
+		uint32_t wait_time_in_closed = (closed_window * 85) / 100;
+		uint32_t wait_time_in_open = closed_window + 100;
+
+		TC_PRINT("\n[%d/%d] %s\n", i + 1, total, test_cases[i].description);
+		TC_PRINT("  Config: Total=%ums, Closed=%ums, Open=%ums\n",
+			 total_timeout, closed_window, open_window);
+
+		m_cfg_wdt0.callback = NULL;
+		m_cfg_wdt0.flags = DEFAULT_FLAGS;
+		m_cfg_wdt0.window.max = total_timeout;
+		m_cfg_wdt0.window.min = closed_window;
+
+		ch_id = wdt_install_timeout(wdt, &m_cfg_wdt0);
+		if (test_cases[i].should_pass) {
+			zassert_true(ch_id >= 0, "%s: Install should succeed, got %d",
+				     test_cases[i].description, ch_id);
+		} else {
+			if (ch_id == -EINVAL) {
+				TC_PRINT("  Expected rejection: Driver correctly rejected\n");
+				continue;
+			}
+			zassert_true(false, "%s: Should have failed with -EINVAL, got %d",
+				     test_cases[i].description, ch_id);
+		}
+
+		ret = wdt_setup(wdt, DEFAULT_OPTIONS);
+		zassert_true(ret == 0, "%s: Setup failed, got %d",
+			     test_cases[i].description, ret);
+
+		/* Test 1: Feed in closed window - must fail */
+		if (wait_time_in_closed > 0) {
+			TC_PRINT("  [1/2] Feed in closed (at %ums): ", wait_time_in_closed);
+			k_msleep(wait_time_in_closed);
+			ret = wdt_feed(wdt, ch_id);
+			zassert_true(ret == -ENOTSUP,
+				     "%s: Expected -ENOTSUP in closed window, got %d",
+				     test_cases[i].description, ret);
+			TC_PRINT("PASS (-ENOTSUP)\n");
+		}
+
+		/* Test 2: Feed in open window - must succeed */
+		TC_PRINT("  [2/2] Feed in open (at %ums): ", wait_time_in_open);
+		if (wait_time_in_open > wait_time_in_closed) {
+			k_msleep(wait_time_in_open - wait_time_in_closed);
+		}
+		ret = wdt_feed(wdt, ch_id);
+		zassert_true(ret == 0,
+			     "%s: Feed should succeed in open window, got %d",
+			     test_cases[i].description, ret);
+		TC_PRINT("PASS\n");
+
+		/* Feed once more to ensure watchdog is satisfied */
+		k_msleep(wait_time_in_open);
+		ret = wdt_feed(wdt, ch_id);
+		zassert_true(ret == 0, "%s: Second feed failed", test_cases[i].description);
+
+		/* Wait for closed window to pass before disabling (feed resets cycle) */
+		k_msleep(closed_window + 100);
+
+		/* Disable and cleanup */
+		ret = wdt_disable(wdt);
+		zassert_true(ret == 0, "%s: Disable failed, got %d",
+			     test_cases[i].description, ret);
+	}
+}
 #endif /* CONFIG_XILINX_WINDOW_WATCHDOG */
 
 /**
