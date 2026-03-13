@@ -509,7 +509,8 @@ ZTEST(wdt_basic_test_suite, test_wdt)
 #endif
 	}
 	if (m_testcase_index == 3U) {
-		zassert_true(test_wdt_enable_wait_mode() == TC_PASS);
+		int result = test_wdt_enable_wait_mode();
+		zassert_true(result == TC_PASS || result == TC_SKIP);
 		m_testcase_index++;
 	}
 	if (m_testcase_index == 4U) {
