@@ -4,6 +4,8 @@
 identifier: versal_rpu
 name: AMD Versal Development board for Cortex-R5
 arch: arm
+simulation:
+  - name: qemu
 toolchain:
   - zephyr
 ram: 65536
