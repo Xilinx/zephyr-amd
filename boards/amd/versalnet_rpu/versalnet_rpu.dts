@@ -17,14 +17,6 @@
 	};
 
 	aliases {
-		dma0 = &adma0;
-		dma1 = &adma1;
-		dma2 = &adma2;
-		dma3 = &adma3;
-		dma4 = &adma4;
-		dma5 = &adma5;
-		dma6 = &adma6;
-		dma7 = &adma7;
 		watchdog0 = &wwdt0;
 	};
 
