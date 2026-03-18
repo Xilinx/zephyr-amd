@@ -212,6 +212,13 @@ static int dma_xilinx_adma_setup_sg_descriptors(const struct device *dev,
 
 		sys_cache_data_flush_range((void *)(uintptr_t)block->source_address,
 					   block->block_size);
+		/*
+		 * Clean and Invalidate dst before DMA writes to it. On ARM64 Cortex-A,
+		 * DC IVAC on a dirty line behaves as DC CIVAC, writing stale CPU
+		 * data back to DDR and overwriting what the DMA wrote.
+		 */
+		sys_cache_data_flush_and_invd_range((void *)(uintptr_t)block->dest_address,
+						    block->block_size);
 		block = block->next_block;
 	}
 
@@ -433,6 +440,13 @@ static int dma_xilinx_adma_start(const struct device *dev, uint32_t channel)
 		adma_write_reg(ctrl_val, &cfg->reg->chan_srcdscr_wrd3);
 		adma_write_reg(ctrl_val, &cfg->reg->chan_dstdscr_wrd3);
 
+		/*
+		 * Clean and Invalidate dst before DMA writes to it. On ARM64 Cortex-A,
+		 * DC IVAC on a dirty line behaves as DC CIVAC, writing stale CPU
+		 * data back to DDR and overwriting what the DMA wrote.
+		 */
+		sys_cache_data_flush_and_invd_range((void *)(uintptr_t)data->chan.dst_addr,
+						    data->chan.block);
 		sys_cache_data_flush_range((void *)(uintptr_t)data->chan.src_addr,
 					   data->chan.block);
 	}
