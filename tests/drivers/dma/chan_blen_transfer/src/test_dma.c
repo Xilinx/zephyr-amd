@@ -66,8 +66,8 @@ static int test_task(const struct device *dma, uint32_t chan_id, uint32_t blen)
 	dma_block_cfg.source_address = (uint64_t)tx_data;
 	dma_block_cfg.dest_address = (uint64_t)rx_data;
 #else
-	dma_block_cfg.source_address = (uint32_t)tx_data;
-	dma_block_cfg.dest_address = (uint32_t)rx_data;
+	dma_block_cfg.source_address = (uintptr_t)tx_data;
+	dma_block_cfg.dest_address = (uintptr_t)rx_data;
 #endif
 
 	if (dma_config(dma, chan_id, &dma_cfg)) {

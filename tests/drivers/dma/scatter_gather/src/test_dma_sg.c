@@ -109,8 +109,8 @@ static int test_sg(void)
 		     PRIx64 "\n", i, CONFIG_DMA_SG_XFER_SIZE, dma_block_cfgs[i].source_address,
 			 dma_block_cfgs[i].dest_address);
 #else
-		dma_block_cfgs[i].source_address = (uint32_t)(tx_data);
-		dma_block_cfgs[i].dest_address = (uint32_t)(rx_data[i]);
+		dma_block_cfgs[i].source_address = (uintptr_t)(tx_data);
+		dma_block_cfgs[i].dest_address = (uintptr_t)(rx_data[i]);
 		TC_PRINT("dma block %d block_size %d, source addr 0x%x, dest addr 0x%x\n",
 			 i, CONFIG_DMA_SG_XFER_SIZE, dma_block_cfgs[i].source_address,
 			 dma_block_cfgs[i].dest_address);

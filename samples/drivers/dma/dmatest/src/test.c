@@ -95,9 +95,9 @@ int main(void)
 		for (int j = 0; j < NUM_SG_BLOCKS; j++) {
 			sg_blocks[i][j].block_size = BUFFER_SIZE;
 			sg_blocks[i][j].source_address =
-				(uint32_t)(&src_buffer[i][j * BUFFER_SIZE]);
+				(uintptr_t)(&src_buffer[i][j * BUFFER_SIZE]);
 			sg_blocks[i][j].dest_address =
-				(uint32_t)(&dst_buffer[i][j * BUFFER_SIZE]);
+				(uintptr_t)(&dst_buffer[i][j * BUFFER_SIZE]);
 			sg_blocks[i][j].source_gather_en = 0;
 			sg_blocks[i][j].dest_scatter_en = 0;
 
@@ -114,8 +114,8 @@ int main(void)
 #else
 		/* Configure DMA block */
 		dma_block_cfg[i].block_size = BUFFER_SIZE;
-		dma_block_cfg[i].source_address = (uint32_t)src_buffer[i];
-		dma_block_cfg[i].dest_address = (uint32_t)dst_buffer[i];
+		dma_block_cfg[i].source_address = (uintptr_t)src_buffer[i];
+		dma_block_cfg[i].dest_address = (uintptr_t)dst_buffer[i];
 		dma_block_cfg[i].source_gather_en = 0;
 		dma_block_cfg[i].dest_scatter_en = 0;
 		dma_block_cfg[i].next_block = NULL;
