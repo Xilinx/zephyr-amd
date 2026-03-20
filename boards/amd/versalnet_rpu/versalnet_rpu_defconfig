@@ -11,3 +11,6 @@ CONFIG_UART_PL011=y
 # Enable I2C, EEPROM
 CONFIG_I2C=y
 CONFIG_EEPROM=y
+
+# Prevent GIC re-initialization in AMP configurations
+CONFIG_GIC_SAFE_CONFIG=y

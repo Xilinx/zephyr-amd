@@ -14,3 +14,6 @@ CONFIG_ARM_ARCH_TIMER=y
 
 # Heap Memory
 CONFIG_HEAP_MEM_POOL_SIZE=16384
+
+# Prevent GIC re-initialization in AMP configurations
+CONFIG_GIC_SAFE_CONFIG=y
