@@ -329,6 +329,52 @@ class LopperCommand(WestCommand):
         if zephyr_board_dts:
             self._copy_files([((os.path.join(workspace, "board.overlay")), workspace_overlay)])
 
+    def _process_cortexa72(self, workspace: Path, ws_dir: str, sdt: Path,
+                          proc: str, lops_dir: Path,
+                          zephyr_board_dts: Optional[Path]) -> None:
+        """Process Cortex-A72 processor."""
+        logger.info("Processing Cortex-A72 processor")
+
+        lops_file = lops_dir / "lop-a72-imux.dts"
+        workspace_dts = Path(ws_dir) / "boards" / "amd" / "versal_apu" / "versal_apu.dts"
+        workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versal_apu" / "versal_apu.overlay"
+
+        # Run lopper commands
+        commands = [
+            f"lopper -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
+            f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
+            f"lopper -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}"
+        ]
+
+        for cmd in commands:
+            runcmd(cmd, cwd=workspace)
+
+        if zephyr_board_dts:
+            self._copy_files([((os.path.join(workspace, "board.overlay")), workspace_overlay)])
+
+    def _process_cortexr5(self, workspace: Path, ws_dir: str, sdt: Path,
+                          proc: str, lops_dir: Path,
+                          zephyr_board_dts: Optional[Path]) -> None:
+        """Process Cortex-R5 processor."""
+        logger.info("Processing Cortex-R5 processor")
+
+        lops_file = lops_dir / "lop-r5-imux.dts"
+        workspace_dts = Path(ws_dir) / "boards" / "amd" / "versal_rpu" / "versal_rpu.dts"
+        workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versal_rpu" / "versal_rpu.overlay"
+
+        # Run lopper commands
+        commands = [
+            f"lopper -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
+            f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
+            f"lopper -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}"
+        ]
+
+        for cmd in commands:
+            runcmd(cmd, cwd=workspace)
+
+        if zephyr_board_dts:
+            self._copy_files([((os.path.join(workspace, "board.overlay")), workspace_overlay)])
+
     def _process_cortexa78(self, workspace: Path, ws_dir: str, sdt: Path,
                           proc: str, lops_dir: Path,
                           zephyr_board_dts: Optional[Path]) -> None:
@@ -423,11 +469,21 @@ class LopperCommand(WestCommand):
                 # Clean up workspace after successful processing
                 shutil.rmtree(workspace)
                 logger.info("Cortex-R52 processing completed successfully")
+            elif "cortexr5" in proc_ip_name:
+                self._process_cortexr5(workspace, str(ws_dir), sdt, proc, lops_dir, zephyr_board_dts)
+                # Clean up workspace after successful processing
+                shutil.rmtree(workspace)
+                logger.info("Cortex-R5 processing completed successfully")
             elif "cortexa78" in proc_ip_name:
                 self._process_cortexa78(workspace, str(ws_dir), sdt, proc, lops_dir, zephyr_board_dts)
                 # Clean up workspace after successful processing
                 shutil.rmtree(workspace)
                 logger.info("Cortex-A78 processing completed successfully")
+            elif "cortexa72" in proc_ip_name:
+                self._process_cortexa72(workspace, str(ws_dir), sdt, proc, lops_dir, zephyr_board_dts)
+                # Clean up workspace after successful processing
+                shutil.rmtree(workspace)
+                logger.info("Cortex-A72 processing completed successfully")
             else:
                 logger.error(f"Unsupported processor type: {proc_ip_name}")
                 sys.exit(1)
