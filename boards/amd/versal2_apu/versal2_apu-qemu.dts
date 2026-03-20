@@ -1324,7 +1324,7 @@
 			};
 
 			dma-controller@0xebd00000 {
-				compatible = "xlnx,zdma";
+				compatible = "xlnx,zdma-v2";
 				reg = <0x00 0xebd00000 0x00 0x10000 0x00>;
 				bus-width = <0x80>;
 				has-parity = <0x01>;
@@ -1346,7 +1346,7 @@
 			};
 
 			dma-controller@0xebd10000 {
-				compatible = "xlnx,zdma";
+				compatible = "xlnx,zdma-v2";
 				reg = <0x00 0xebd10000 0x00 0x10000 0x00>;
 				bus-width = <0x80>;
 				has-parity = <0x01>;
@@ -1368,7 +1368,7 @@
 			};
 
 			dma-controller@0xebd20000 {
-				compatible = "xlnx,zdma";
+				compatible = "xlnx,zdma-v2";
 				reg = <0x00 0xebd20000 0x00 0x10000 0x00>;
 				bus-width = <0x80>;
 				has-parity = <0x01>;
@@ -1390,7 +1390,7 @@
 			};
 
 			dma-controller@0xebd30000 {
-				compatible = "xlnx,zdma";
+				compatible = "xlnx,zdma-v2";
 				reg = <0x00 0xebd30000 0x00 0x10000 0x00>;
 				bus-width = <0x80>;
 				has-parity = <0x01>;
@@ -1412,7 +1412,7 @@
 			};
 
 			dma-controller@0xebd40000 {
-				compatible = "xlnx,zdma";
+				compatible = "xlnx,zdma-v2";
 				reg = <0x00 0xebd40000 0x00 0x10000 0x00>;
 				bus-width = <0x80>;
 				has-parity = <0x01>;
@@ -1434,7 +1434,7 @@
 			};
 
 			dma-controller@0xebd50000 {
-				compatible = "xlnx,zdma";
+				compatible = "xlnx,zdma-v2";
 				reg = <0x00 0xebd50000 0x00 0x10000 0x00>;
 				bus-width = <0x80>;
 				has-parity = <0x01>;
@@ -1456,7 +1456,7 @@
 			};
 
 			dma-controller@0xebd60000 {
-				compatible = "xlnx,zdma";
+				compatible = "xlnx,zdma-v2";
 				reg = <0x00 0xebd60000 0x00 0x10000 0x00>;
 				bus-width = <0x80>;
 				has-parity = <0x01>;
@@ -1478,7 +1478,7 @@
 			};
 
 			dma-controller@0xebd70000 {
-				compatible = "xlnx,zdma";
+				compatible = "xlnx,zdma-v2";
 				reg = <0x00 0xebd70000 0x00 0x10000 0x00>;
 				bus-width = <0x80>;
 				has-parity = <0x01>;
@@ -1991,7 +1991,7 @@
 			};
 
 			dma-controller@0xebd80000 {
-				compatible = "xlnx,zdma";
+				compatible = "xlnx,zdma-v2";
 				reg = <0x00 0xebd80000 0x00 0x10000 0x00>;
 				bus-width = <0x80>;
 				has-parity = <0x01>;
@@ -2013,7 +2013,7 @@
 			};
 
 			dma-controller@0xebd90000 {
-				compatible = "xlnx,zdma";
+				compatible = "xlnx,zdma-v2";
 				reg = <0x00 0xebd90000 0x00 0x10000 0x00>;
 				bus-width = <0x80>;
 				has-parity = <0x01>;
@@ -2035,7 +2035,7 @@
 			};
 
 			dma-controller@0xebda0000 {
-				compatible = "xlnx,zdma";
+				compatible = "xlnx,zdma-v2";
 				reg = <0x00 0xebda0000 0x00 0x10000 0x00>;
 				bus-width = <0x80>;
 				has-parity = <0x01>;
@@ -2057,7 +2057,7 @@
 			};
 
 			dma-controller@0xebdb0000 {
-				compatible = "xlnx,zdma";
+				compatible = "xlnx,zdma-v2";
 				reg = <0x00 0xebdb0000 0x00 0x10000 0x00>;
 				bus-width = <0x80>;
 				has-parity = <0x01>;
@@ -2079,7 +2079,7 @@
 			};
 
 			dma-controller@0xebdc0000 {
-				compatible = "xlnx,zdma";
+				compatible = "xlnx,zdma-v2";
 				reg = <0x00 0xebdc0000 0x00 0x10000 0x00>;
 				bus-width = <0x80>;
 				has-parity = <0x01>;
@@ -2101,7 +2101,7 @@
 			};
 
 			dma-controller@0xebdd0000 {
-				compatible = "xlnx,zdma";
+				compatible = "xlnx,zdma-v2";
 				reg = <0x00 0xebdd0000 0x00 0x10000 0x00>;
 				bus-width = <0x80>;
 				has-parity = <0x01>;
@@ -2123,7 +2123,7 @@
 			};
 
 			dma-controller@0xebde0000 {
-				compatible = "xlnx,zdma";
+				compatible = "xlnx,zdma-v2";
 				reg = <0x00 0xebde0000 0x00 0x10000 0x00>;
 				bus-width = <0x80>;
 				has-parity = <0x01>;
@@ -2145,7 +2145,7 @@
 			};
 
 			dma-controller@0xebdf0000 {
-				compatible = "xlnx,zdma";
+				compatible = "xlnx,zdma-v2";
 				reg = <0x00 0xebdf0000 0x00 0x10000 0x00>;
 				bus-width = <0x80>;
 				has-parity = <0x01>;
