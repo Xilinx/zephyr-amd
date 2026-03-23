@@ -1,0 +1,79 @@
+/*
+ * Copyright (c) 2026, Advanced Micro Devices, Inc.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Xen DomU variant for AMD Versal Gen 2 APU.
+ *
+ * Defines the minimal platform for running Zephyr as a Xen DomU guest:
+ *   - Single vCPU (arm,armv8, reg=0)
+ *   - Xen-assigned memory (16 MiB @ 0x40000000)
+ *   - Virtual GIC-v3 at Xen-assigned addresses
+ *   - PSCI via HVC (Xen mediates)
+ *   - HVC console (always available, no passthrough needed)
+ *   - Xen hypervisor node
+ *
+ * All physical peripherals (UART, I2C, etc.) are disabled by default.
+ * Tests enable passthrough devices via board-specific overlays:
+ *   <test>/boards/versal2_apu_amd_versal2_apu_xen_domu.overlay
+ *
+ * Memory, GIC, and hypervisor addresses are Xen-assigned and may vary.
+ * Use LIBXL_DEBUG_DUMP_DTB to verify:
+ *   LIBXL_DEBUG_DUMP_DTB=domu.dtb xl create zephyr.cfg
+ *   dtc -I dtb -O dts domu.dtb
+ */
+
+/dts-v1/;
+#include <arm64/xilinx/versal2_a78.dtsi>
+#include <zephyr/dt-bindings/interrupt-controller/arm-gic.h>
+
+/* Xen DomU gets a single vCPU; delete the extra SoC CPUs */
+/delete-node/ &cpu100;
+/delete-node/ &cpu200;
+/delete-node/ &cpu300;
+
+/ {
+	compatible = "xlnx,versal2_apu";
+	model = "AMD Versal Gen 2 APU Xen DomU";
+
+	chosen {
+		zephyr,sram = &domu_ram;
+		zephyr,console = &xen_hvc;
+		zephyr,shell-uart = &xen_hvc;
+	};
+
+	xen_hvc: hvc {
+		compatible = "xen,hvc-uart";
+		status = "okay";
+	};
+
+	psci {
+		method = "hvc";
+	};
+
+	domu_ram: memory@40000000 {
+		device_type = "mmio-sram";
+		reg = <0x0 0x40000000 0x0 DT_SIZE_M(16)>;
+	};
+
+	hypervisor: hypervisor@38000000 {
+		compatible = "xen,xen";
+		reg = <0x0 0x38000000 0x0 0x1000000>;
+		interrupts = <GIC_PPI 15 IRQ_TYPE_EDGE IRQ_DEFAULT_PRIORITY>;
+		interrupt-parent = <&gic>;
+	};
+};
+
+&cpu0 {
+	compatible = "arm,armv8";
+	reg = <0>;
+};
+
+&gic {
+	compatible = "arm,gic-v3", "arm,gic";
+	reg = <0x0 0x3001000 0x0 0x10000
+	       0x0 0x3020000 0x0 0x1000000>;
+};
+
+&uart0 { status = "disabled"; };
+&uart1 { status = "disabled"; };

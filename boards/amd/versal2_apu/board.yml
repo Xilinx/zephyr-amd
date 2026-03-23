@@ -9,3 +9,4 @@ board:
   - name: amd_versal2_apu
     variants:
     - name: smp
+    - name: xen_domu

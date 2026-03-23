@@ -1,0 +1,11 @@
+identifier: versal2_apu/amd_versal2_apu/xen_domu
+name: AMD Development board for Versal Gen 2 APU (Xen DomU)
+arch: arm64
+toolchain:
+  - zephyr
+testing:
+  default: false
+  ignore_tags:
+    - net
+    - bluetooth
+vendor: amd
