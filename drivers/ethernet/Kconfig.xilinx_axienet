@@ -16,28 +16,3 @@ config ETH_XILINX_AXIENET
 		Enable Xilinx 1G / 2.5G AXI Ethernet driver,
 		commonly found on FPGAs.
 
-config ETH_XILINX_AXIENET_BUFFER_NUM_TX
-	int "Number of buffers for concurrent transmission (TX)."
-	depends on ETH_XILINX_AXIENET
-	default DMA_XILINX_AXI_DMA_SG_DESCRIPTOR_NUM_TX
-	range 2 DMA_XILINX_AXI_DMA_SG_DESCRIPTOR_NUM_TX
-	help
-		Number of buffers for transmission allocated in the Xilinx AXI Ethernet driver.
-		This limits how many transmissions can be in-flight at the same time.
-		This cannot exceed the number of available TX buffers in the AXI DMA. However,
-		in scenarios with multiple AXI DMAs for different purposes in the system, it
-		may be desirable to reduce the number of concurrent transmissions to conserve
-		resources.
-
-config ETH_XILINX_AXIENET_BUFFER_NUM_RX
-	int "Number of buffers for concurrent reception (RX)."
-	depends on ETH_XILINX_AXIENET
-	default DMA_XILINX_AXI_DMA_SG_DESCRIPTOR_NUM_RX
-	range 2 DMA_XILINX_AXI_DMA_SG_DESCRIPTOR_NUM_RX
-	help
-		Number of buffers for reception allocated in the Xilinx AXI Ethernet driver.
-		This limits how many transmissions can be in-flight at the same time.
-		This cannot exceed the number of available RX buffers in the AXI DMA. However,
-		in scenarios with multiple AXI DMAs for different purposes in the system, it
-		may be desirable to reduce the number of concurrent transmissions to conserve
-		resources.

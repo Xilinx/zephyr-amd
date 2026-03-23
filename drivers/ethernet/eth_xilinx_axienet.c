@@ -17,6 +17,7 @@ LOG_MODULE_REGISTER(eth_xilinx_axienet, CONFIG_ETHERNET_LOG_LEVEL);
 #include <zephyr/irq.h>
 #include <zephyr/sys/barrier.h>
 #include "eth.h"
+#include <zephyr/drivers/ethernet/eth_xilinx_axienet.h>
 
 #include "../dma/dma_xilinx_axi_dma.h"
 
@@ -62,6 +63,10 @@ LOG_MODULE_REGISTER(eth_xilinx_axienet, CONFIG_ETHERNET_LOG_LEVEL);
 #define XILINX_AXIENET_ETH_ALIGN sizeof(void *)
 #endif
 
+/* Default TX/RX BD counts used at boot; can be changed at runtime via net axienet_bd_config. */
+#define XILINX_AXIENET_BD_COUNT_TX_DEFAULT 16
+#define XILINX_AXIENET_BD_COUNT_RX_DEFAULT 16
+
 #define XILINX_AXIENET_ETH_BUFFER_SIZE                                                             \
 	((NET_ETH_MAX_FRAME_SIZE + XILINX_AXIENET_ETH_ALIGN - 1) & ~(XILINX_AXIENET_ETH_ALIGN - 1))
 
@@ -71,8 +76,10 @@ struct xilinx_axienet_buffer {
 
 /* device state */
 struct xilinx_axienet_data {
-	struct xilinx_axienet_buffer tx_buffer[CONFIG_ETH_XILINX_AXIENET_BUFFER_NUM_TX];
-	struct xilinx_axienet_buffer rx_buffer[CONFIG_ETH_XILINX_AXIENET_BUFFER_NUM_RX];
+	struct xilinx_axienet_buffer *tx_buffer;
+	struct xilinx_axienet_buffer *rx_buffer;
+	size_t num_tx_buffers;
+	size_t num_rx_buffers;
 
 	size_t rx_populated_buffer_index;
 	size_t rx_completed_buffer_index;
@@ -131,7 +138,7 @@ static void xilinx_axienet_rx_callback(const struct device *dma, void *user_data
 	struct net_pkt *pkt;
 
 	size_t next_descriptor =
-		(data->rx_completed_buffer_index + 1) % CONFIG_ETH_XILINX_AXIENET_BUFFER_NUM_RX;
+		(data->rx_completed_buffer_index + 1) % data->num_rx_buffers;
 	size_t current_descriptor = data->rx_completed_buffer_index;
 
 	if (!net_if_is_up(data->interface)) {
@@ -185,7 +192,7 @@ static void xilinx_axienet_tx_callback(const struct device *dev, void *user_data
 	struct device *ethdev = (struct device *)user_data;
 	struct xilinx_axienet_data *data = ethdev->data;
 	size_t next_descriptor =
-		(data->tx_completed_buffer_index + 1) % CONFIG_ETH_XILINX_AXIENET_BUFFER_NUM_TX;
+		(data->tx_completed_buffer_index + 1) % data->num_tx_buffers;
 
 	data->tx_completed_buffer_index = next_descriptor;
 
@@ -201,7 +208,7 @@ static int setup_dma_rx_transfer(const struct device *dev,
 {
 	int err;
 	size_t next_descriptor =
-		(data->rx_populated_buffer_index + 1) % CONFIG_ETH_XILINX_AXIENET_BUFFER_NUM_RX;
+		(data->rx_populated_buffer_index + 1) % data->num_rx_buffers;
 	size_t current_descriptor = data->rx_populated_buffer_index;
 
 	if (next_descriptor == data->rx_completed_buffer_index) {
@@ -224,6 +231,7 @@ static int setup_dma_rx_transfer(const struct device *dev,
 					      .complete_callback_en = 1,
 					      .error_callback_dis = 0,
 					      .block_count = 1,
+					      .num_sg_descriptors = data->num_rx_buffers,
 					      .head_block = &head_block,
 					      .user_data = (void *)dev,
 					      .dma_callback = xilinx_axienet_rx_callback};
@@ -273,7 +281,7 @@ static int setup_dma_tx_transfer(const struct device *dev,
 {
 	int err;
 	size_t next_descriptor =
-		(data->tx_populated_buffer_index + 1) % CONFIG_ETH_XILINX_AXIENET_BUFFER_NUM_TX;
+		(data->tx_populated_buffer_index + 1) % data->num_tx_buffers;
 	size_t current_descriptor = data->tx_populated_buffer_index;
 
 	if (next_descriptor == data->tx_completed_buffer_index) {
@@ -296,6 +304,7 @@ static int setup_dma_tx_transfer(const struct device *dev,
 					      .complete_callback_en = 1,
 					      .error_callback_dis = 0,
 					      .block_count = 1,
+					      .num_sg_descriptors = data->num_tx_buffers,
 					      .head_block = &head_block,
 					      .user_data = (void *)dev,
 					      .dma_callback = xilinx_axienet_tx_callback};
@@ -556,6 +565,10 @@ static int xilinx_axienet_probe(const struct device *dev)
 
 	xilinx_axienet_set_mac_address(config, data);
 
+	/* Record default BD counts; actual allocation happens in start(). */
+	data->num_tx_buffers = XILINX_AXIENET_BD_COUNT_TX_DEFAULT;
+	data->num_rx_buffers = XILINX_AXIENET_BD_COUNT_RX_DEFAULT;
+
 	config->config_func(data);
 
 	return 0;
@@ -599,6 +612,12 @@ static int xilinx_axienet_stop(const struct device *dev)
 	status &= ~XILINX_AXIENET_TX_CONTROL_TX_EN_MASK;
 	xilinx_axienet_write_register(config, XILINX_AXIENET_TX_CONTROL_REG_OFFSET, status);
 
+	/* Free TX/RX packet buffers. */
+	k_free(data->tx_buffer);
+	data->tx_buffer = NULL;
+	k_free(data->rx_buffer);
+	data->rx_buffer = NULL;
+
 	data->dma_is_configured_rx = false;
 	data->dma_is_configured_tx = false;
 	data->rx_populated_buffer_index = 0;
@@ -622,10 +641,39 @@ static int xilinx_axienet_start(const struct device *dev)
 		return 0;
 	}
 
-	for (int i = 0; i < CONFIG_ETH_XILINX_AXIENET_BUFFER_NUM_RX - 1; i++) {
+	/* Allocate Ethernet TX packet buffers. */
+	data->tx_buffer = k_malloc(data->num_tx_buffers * sizeof(struct xilinx_axienet_buffer));
+	if (!data->tx_buffer) {
+		LOG_ERR("%s: failed to allocate %zu TX buffers",
+			dev->name, data->num_tx_buffers);
+		return -ENOMEM;
+	}
+
+	/* Allocate Ethernet RX packet buffers. */
+	data->rx_buffer = k_malloc(data->num_rx_buffers * sizeof(struct xilinx_axienet_buffer));
+	if (!data->rx_buffer) {
+		LOG_ERR("%s: failed to allocate %zu RX buffers",
+			dev->name, data->num_rx_buffers);
+		k_free(data->tx_buffer);
+		data->tx_buffer = NULL;
+		return -ENOMEM;
+	}
+
+	/* DMA driver allocates the SG ring on first dma_configure() call.
+	 * RX SG bd count is communicated via dma_config.num_sg_descriptors.
+	 */
+	for (int i = 0; i < (int)data->num_rx_buffers - 1; i++) {
 		err = setup_dma_rx_transfer(dev, config, data);
 		if (err) {
 			LOG_ERR("%s: failed to seed RX DMA transfer %d: %d", dev->name, i, err);
+			k_free(data->tx_buffer);
+			data->tx_buffer = NULL;
+			k_free(data->rx_buffer);
+			data->rx_buffer = NULL;
+			data->dma_is_configured_rx = false;
+			/* dma_stop() frees any SG descriptors allocated by dma_configure(). */
+			dma_stop(config->dma, XILINX_AXI_DMA_RX_CHANNEL_NUM);
+			dma_stop(config->dma, XILINX_AXI_DMA_TX_CHANNEL_NUM);
 			return err;
 		}
 	}
@@ -646,6 +694,43 @@ static int xilinx_axienet_start(const struct device *dev)
 
 	LOG_INF("%s: AxiEnet started", dev->name);
 	return 0;
+}
+
+int xilinx_axienet_set_bd_counts(const struct device *dev, size_t num_tx, size_t num_rx)
+{
+	struct xilinx_axienet_data *data = dev->data;
+
+	if (data->started) {
+		LOG_WRN("%s: BD counts can only be changed while the interface is down. "
+			"Run 'net iface down' first.",
+			dev->name);
+		return -EBUSY;
+	}
+
+	if (num_tx == 0 || num_rx == 0) {
+		LOG_ERR("BD counts must be > 0 (got tx=%zu rx=%zu)", num_tx, num_rx);
+		return -EINVAL;
+	}
+
+	data->num_tx_buffers = num_tx;
+	data->num_rx_buffers = num_rx;
+
+	LOG_INF("%s: BD counts set (tx=%zu rx=%zu) - will be applied on next 'net iface up'",
+		dev->name, num_tx, num_rx);
+
+	return 0;
+}
+
+void xilinx_axienet_get_bd_counts(const struct device *dev, size_t *num_tx, size_t *num_rx)
+{
+	const struct xilinx_axienet_data *data = dev->data;
+
+	if (num_tx) {
+		*num_tx = data->num_tx_buffers;
+	}
+	if (num_rx) {
+		*num_rx = data->num_rx_buffers;
+	}
 }
 
 /* TODO PTP, VLAN not supported yet */
