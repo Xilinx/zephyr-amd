@@ -840,6 +840,12 @@ static void eth_xlnx_gem_configure_clocks(const struct device *dev,
 		target = 2500000;   /* Target frequency: 2.5 MHz */
 	}
 
+	if (dev_conf->clk_ctrl_reg_address == 0) {
+		LOG_INF("%s: no clock ctrl reg in DT, skipping clock configuration",
+			dev->name);
+		return;
+	}
+
 	/*
 	 * Calculate the divisors for the target frequency.
 	 * The frequency of the PLL to which the divisors shall be applied are

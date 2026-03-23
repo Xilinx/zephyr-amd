@@ -429,7 +429,8 @@ static const struct eth_xlnx_gem_dev_cfg eth_xlnx_gem##port##_dev_cfg = {\
 	.base_addr			= DT_REG_ADDR_BY_IDX(DT_INST_PARENT(port), 0),\
 	.config_func			= eth_xlnx_gem##port##_irq_config,\
 	.pll_clock_frequency		= DT_INST_PROP(port, clock_frequency),\
-	.clk_ctrl_reg_address		= DT_REG_ADDR_BY_IDX(DT_INST_PARENT(port), 1),\
+	.clk_ctrl_reg_address		= COND_CODE_1(DT_REG_HAS_IDX(DT_INST_PARENT(port), 1), \
+		(DT_REG_ADDR_BY_IDX(DT_INST_PARENT(port), 1)), (0)),\
 	.defer_rxp_to_queue		= !DT_INST_PROP(port, handle_rx_in_isr),\
 	.defer_txd_to_queue		= DT_INST_PROP(port, handle_tx_in_workq),\
 	.ahb_burst_length		= (enum eth_xlnx_ahb_burst_length)\
