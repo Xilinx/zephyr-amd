@@ -1,0 +1,102 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Xilinx TTC (Triple Timer Counter) individual counter device.
+
+  Each TTC IP block contains 3 independent counters. This binding represents
+  a single counter within a TTC block. Multiple counters from the same TTC
+  block share the same base address (reg) but have different timer-id values.
+
+compatible: "xlnx,ttc-counter"
+
+include: [base.yaml]
+
+properties:
+  reg:
+    required: true
+    description: |
+      Base address of the TTC block. Multiple counters within the same
+      TTC block share this address and are differentiated by timer-id.
+
+  interrupts:
+    required: true
+    description: |
+      Timer interrupt configuration. Each counter within a TTC block
+      typically has its own interrupt line.
+
+  timer-id:
+    type: int
+    required: true
+    enum:
+      - 0
+      - 1
+      - 2
+    description: |
+      Counter index within the TTC block (0, 1, or 2).
+      Each TTC IP block has exactly 3 counters.
+
+  prescaler:
+    type: int
+    description: |
+      Clock prescaler value (0-15). The effective frequency is:
+      freq = clock-frequency / (2 ^ (prescaler + 1))
+
+  clock-frequency:
+    type: int
+    required: true
+    description: Input clock frequency in Hz
+
+  timer-width:
+    type: int
+    required: true
+    enum:
+      - 16
+      - 32
+    description: |
+      Number of bits in the timer counter.
+
+examples:
+  - |
+    soc {
+      #address-cells = <1>;
+      #size-cells = <1>;
+      /* Example for 2 TTC blocks with selected counters enabled */
+      /* TTC0 - base address 0xff110000 */
+      ttc0_cnt0: counter@ff110000 {
+          compatible = "xlnx,ttc-counter";
+          reg = <0xff110000 0x1000>;
+          interrupts = <GIC_SPI 36 IRQ_TYPE_LEVEL_HIGH>;
+          timer-id = <0>;
+          clock-frequency = <100000000>;
+          timer-width = <32>;
+      };
+
+      ttc0_cnt1: counter@ff110000 {
+        compatible = "xlnx,ttc-counter";
+        reg = <0xff110000 0x1000>;
+        interrupts = <GIC_SPI 37 IRQ_TYPE_LEVEL_HIGH>;
+        timer-id = <1>;
+        clock-frequency = <100000000>;
+        timer-width = <32>;
+      };
+
+      ttc0_cnt2: counter@ff110000 {
+        compatible = "xlnx,ttc-counter";
+        reg = <0xff110000 0x1000>;
+        interrupts = <GIC_SPI 38 IRQ_TYPE_LEVEL_HIGH>;
+        timer-id = <2>;
+        clock-frequency = <100000000>;
+        timer-width = <32>;
+      };
+      /* TTC1 - different base address 0xff120000 */
+      ttc1_cnt0: counter@ff120000 {
+        compatible = "xlnx,ttc-counter";
+        reg = <0xff120000 0x1000>;
+        interrupts = <GIC_SPI 39 IRQ_TYPE_LEVEL_HIGH>;
+        timer-id = <0>;
+        clock-frequency = <100000000>;
+        timer-width = <32>;
+      };
+    };
