@@ -145,3 +145,23 @@
 	status = "okay";
 	clocks = <&wwdtclk>;
 };
+
+&ttc0_timer0 {
+	status = "okay";
+	timer-id = <0>;
+	clock-frequency = <147915192>;
+};
+
+&ttc0_timer1 {
+	status = "okay";
+	timer-id = <1>;
+	clock-frequency = <147915192>;
+	prescaler = <0>;
+};
+
+&ttc0_timer2 {
+	status = "okay";
+	timer-id = <2>;
+	clock-frequency = <147915192>;
+	prescaler = <0>;
+};
