@@ -41,6 +41,7 @@ zephyr_library_sources_ifdef(CONFIG_COUNTER_NATIVE_SIM          counter_native_s
 zephyr_library_sources_ifdef(CONFIG_USERSPACE                   counter_handlers.c)
 zephyr_library_sources_ifdef(CONFIG_COUNTER_NXP_PIT             counter_nxp_pit.c)
 zephyr_library_sources_ifdef(CONFIG_COUNTER_XLNX_AXI_TIMER      counter_xlnx_axi_timer.c)
+zephyr_library_sources_ifdef(CONFIG_COUNTER_XLNX_TTC            counter_xlnx_ttc.c)
 zephyr_library_sources_ifdef(CONFIG_COUNTER_TMR_ESP32           counter_esp32_tmr.c)
 zephyr_library_sources_ifdef(CONFIG_COUNTER_RTC_ESP32           counter_esp32_rtc.c)
 zephyr_library_sources_ifdef(CONFIG_COUNTER_SMARTBOND_TIMER     counter_smartbond_timer.c)
