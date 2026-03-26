@@ -235,3 +235,6 @@ tests:
       - EXTRA_DTC_OVERLAY_FILE="boards/mx25uw63_single_io.overlay;boards/mx25uw63_freq_1M.overlay"
     harness_config:
       fixture: gpio_loopback
+  drivers.flash.common.versalnet:
+    build_only: true
+    filter: CONFIG_SOC_AMD_VERSALNET_RPU and dt_compat_enabled("jedec,spi-nor")

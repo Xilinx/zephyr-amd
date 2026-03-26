@@ -59,3 +59,6 @@ tests:
         - "Test 2: Flash write"
         - "Attempting to write 4 bytes"
         - "Data read matches data written. Good!!"
+  sample.drivers.spi.flash.versalnet:
+    build_only: true
+    filter: CONFIG_SOC_AMD_VERSALNET_RPU and dt_compat_enabled("jedec,spi-nor")
