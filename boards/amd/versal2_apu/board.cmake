@@ -31,6 +31,11 @@ set(QEMU_FLAGS_${ARCH}
   -m 2g
 )
 
+# Add SMP support if configured maxcpus parameter value is aligned with QEMU DT
+if(CONFIG_SMP AND CONFIG_MP_MAX_NUM_CPUS GREATER 1)
+  list(APPEND QEMU_SMP_FLAGS -smp maxcpus=18)
+endif()
+
 set(QEMU_KERNEL_OPTION
   -device loader,cpu-num=0,file=${PROJECT_BINARY_DIR}/../tfa/versal2/${BUILD_FOLDER}/bl31/bl31.elf
   -device loader,file=\$<TARGET_FILE:\${logical_target_for_zephyr_elf}>
