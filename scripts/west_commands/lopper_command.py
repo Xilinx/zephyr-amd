@@ -445,7 +445,7 @@ class LopperCommand(WestCommand):
                     logger.error(f" board dts file not found: {zephyr_board_dts}")
                     sys.exit(1)
             else:
-                logger.warn("board dts not specified, proceeding without board overlay")
+                logger.warning("board dts not specified, proceeding without board overlay")
 
             # Get lopper operations directory
             lops_dir = Path(lopper.__file__).parent / "lops"
