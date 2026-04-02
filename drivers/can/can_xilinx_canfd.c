@@ -1042,7 +1042,7 @@ static int xcanfd_init(const struct device *dev)
 	return 0;
 }
 
-static const struct can_driver_api xcanfd_driver_api = {
+static DEVICE_API(can, xcanfd_driver_api) = {
 	.get_capabilities = xcanfd_get_capabilities,
 	.start = xcanfd_start,
 	.stop = xcanfd_stop,
@@ -1116,7 +1116,7 @@ static const struct can_driver_api xcanfd_driver_api = {
 		DT_INST_PROP_BY_PHANDLE(n, clocks, clock_frequency),	\
 	};								\
 	static struct xcanfd_data xcanfd_data_##n;			\
-	DEVICE_DT_INST_DEFINE(n, xcanfd_init,				\
+	CAN_DEVICE_DT_INST_DEFINE(n, xcanfd_init,			\
 			NULL,						\
 			&xcanfd_data_##n,				\
 			&xcanfd_cfg_##n,				\
