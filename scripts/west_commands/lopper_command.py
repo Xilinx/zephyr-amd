@@ -3,16 +3,17 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Lopper command for Zephyr west build system.
-This module provides functionality to generate device tree files and configurations
-for various processors using the lopper tool.
+West extension: run Lopper against a system device tree (SDT) and refresh
+Zephyr board DTS / Kconfig under a Zephyr tree.
 """
 
+import argparse
 import logging
 import os
 import shutil
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any
 import yaml
@@ -172,41 +173,78 @@ def runcmd(cmd: str, cwd: Optional[Union[str, Path]] = None,
         return False
 
 class LopperCommand(WestCommand):
-    """West command for running lopper to generate device tree files and configurations."""
+    """West command for running Lopper to generate device tree files and configurations."""
 
     def __init__(self):
         super().__init__(
             'lopper-command',
-            'Install lopper dependencies and run lopper commands',
-            'This command runs lopper commands based on user inputs to generate '
-            'device tree files and configurations for various processors.'
-        )
+            # Keep in sync with scripts/west-commands.yml (help string).
+            'generate Zephyr DTS from a system device tree (Lopper)',
+            textwrap.dedent('''
+            Runs Lopper on a Xilinx/AMD system device tree and writes generated
+            DTS (and related files) into the Zephyr repository given by -w/--ws_dir.
+
+            Workspace layout:
+              -ws_dir must be the Zephyr manifest project directory (the folder
+              that contains west.yml). Generated files are placed under that tree
+              (for example boards/ and soc/). The west workspace is expected to
+              have the ``lopper`` project next to zephyr (sibling directory).
+
+            Current working directory:
+              You may run this command from any directory. If the lopper revision
+              in west.yml differs from the checked-out lopper project, this command
+              runs ``west update lopper`` and ``west lopper-install`` with -w as the
+              working directory for those nested commands (so you do not need to
+              ``cd`` into zephyr first).
+
+            Default for -w is ./zephyr/ relative to the shell's current directory;
+            from the workspace root that is typically the zephyr repo. If your
+            shell is already inside the zephyr repo, pass -w . (or an absolute path).
+            ''').strip())
 
     def do_add_parser(self, parser_adder):
         """Add command-line argument parser."""
-        parser = parser_adder.add_parser(self.name, help=self.help)
+        parser = parser_adder.add_parser(
+            self.name,
+            help=self.help,
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            description=self.description,
+            epilog=textwrap.dedent('''
+            examples:
+              From workspace root (zephyr and lopper are subdirectories):
+
+                west lopper-command -p <processor> -s /path/to/system-top.dts
+
+              From any directory, with an explicit Zephyr path:
+
+                west lopper-command -w /path/to/zephyr -p <processor> -s /path/to/system-top.dts
+
+              Already cd'd into the zephyr repository:
+
+                west lopper-command -w . -p <processor> -s /path/to/system-top.dts
+            ''').strip(),
+        )
 
         required_args = parser.add_argument_group("Required arguments")
         required_args.add_argument(
             "-p", "--proc",
             required=True,
-            help="Specify the processor name"
+            help="processor/domain name as used in the SDT (must match a key in the cpulist for this SDT)",
         )
         required_args.add_argument(
             "-s", "--sdt",
             required=True,
-            help="Specify the System device-tree path (till system-top.dts file)"
+            help="path to system-top.dts (SDT root file passed to Lopper)",
         )
 
         parser.add_argument(
             "-b", "--board_dts",
-            help="Specify the board dts file path to pick (till *.dts file)"
+            help="optional path to a board .dts file used as the Zephyr board source for overlay generation",
         )
         parser.add_argument(
             "-w", "--ws_dir",
-            default='./zephyr/',
-            help="Workspace directory (zephyr repository path) where domain will be created "
-                 "(Default: zephyr directory in Current Work Directory)"
+            default="./zephyr/",
+            help="Zephyr repository root: directory that contains west.yml (default: ./zephyr/ relative to cwd)",
         )
 
         return parser
@@ -420,10 +458,79 @@ class LopperCommand(WestCommand):
                 logger.error(f"Failed to copy {src} to {dst}: {e}")
                 raise
 
+    def _get_lopper_expected_rev(self, zephyr_dir: Path) -> Optional[str]:
+        """Read the lopper revision from west.yml."""
+        west_yml = zephyr_dir / "west.yml"
+        if not west_yml.is_file():
+            logger.warning(f"west.yml not found at {west_yml}, skipping srcrev check")
+            return None
+        try:
+            with open(west_yml, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+            projects = data.get('manifest', {}).get('projects', [])
+            for proj in projects:
+                if proj.get('name') == 'lopper':
+                    return proj.get('revision')
+        except Exception as e:
+            logger.warning(f"Failed to parse west.yml: {e}")
+        return None
+
+    def _get_lopper_actual_rev(self, lopper_dir: Path) -> Optional[str]:
+        """Get the current git HEAD commit of the lopper directory."""
+        if not lopper_dir.is_dir():
+            return None
+        try:
+            result = subprocess.run(
+                ['git', 'rev-parse', 'HEAD'],
+                cwd=lopper_dir,
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except Exception as e:
+            logger.warning(f"Failed to get lopper git HEAD: {e}")
+        return None
+
+    def _ensure_lopper_up_to_date(self, zephyr_dir: Path) -> None:
+        """Run west update and lopper-install only if lopper srcrev has changed."""
+        if not zephyr_dir.is_dir():
+            logger.error(f"Zephyr workspace path is not a directory: {zephyr_dir}")
+            sys.exit(1)
+        if not (zephyr_dir / "west.yml").is_file():
+            logger.error(
+                f"west.yml not found under {zephyr_dir}. "
+                "Use -w/--ws_dir with the Zephyr repository root (manifest project)."
+            )
+            sys.exit(1)
+
+        lopper_dir = (zephyr_dir / ".." / "lopper").resolve()
+
+        expected_rev = self._get_lopper_expected_rev(zephyr_dir)
+        actual_rev = self._get_lopper_actual_rev(lopper_dir)
+
+        if expected_rev and actual_rev and expected_rev == actual_rev:
+            logger.info(f"Lopper is already at required revision {expected_rev[:12]}, skipping west update")
+            return
+
+        if expected_rev and actual_rev:
+            logger.info(f"Lopper revision mismatch: expected {expected_rev[:12]}, got {actual_rev[:12]}")
+        else:
+            logger.info("Could not determine lopper revision, running west update to be safe")
+
+        logger.info("Running west update")
+        runcmd("west update lopper", cwd=zephyr_dir)
+        logger.info("Running west lopper-install")
+        runcmd("west lopper-install", cwd=zephyr_dir)
+
     def do_run(self, args, unknown_args) -> None:
         """Main execution method for the lopper command."""
         try:
             logger.info("Starting lopper command execution")
+
+            # Ensure lopper is at the revision specified in west.yml
+            zephyr_dir = Path(args.ws_dir).resolve()
+            self._ensure_lopper_up_to_date(zephyr_dir)
 
             # Validate and prepare paths
             sdt = Path(args.sdt).resolve()
