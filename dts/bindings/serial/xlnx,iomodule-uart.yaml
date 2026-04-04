@@ -1,0 +1,50 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Xilinx IOModule UART (child of IOModule MFD)
+
+  This is the UartLite-compatible UART block within the IOModule.
+  It provides basic serial communication with TX/RX FIFOs.
+
+  This node must be a child of an xlnx,iomodule node.
+
+  Registers used (offsets from IOModule base):
+    0x00: RX Data FIFO
+    0x04: TX Data FIFO
+    0x08: Status Register
+    0x4C: Baud Rate Divider (optional)
+
+compatible: "xlnx,iomodule-uart"
+
+include: [uart-controller.yaml, base.yaml]
+
+properties:
+  current-speed:
+    description: Baud rate for the UART
+    default: 9600
+
+  xlnx,uart-baudrate:
+    type: int
+    description: |
+      Hardware-configured UART baud rate.
+      This is typically set at IP synthesis time through Vivado.
+
+  xlnx,uart-prog-baudrate:
+    type: boolean
+    description: |
+      If present, the UART baud rate is programmable via
+      the baud rate divider register at offset 0x4C.
+
+  xlnx,uart-data-bits:
+    type: int
+    default: 8
+    description: Number of data bits (typically 8)
+
+  xlnx,uart-use-parity:
+    type: boolean
+    description: Enable parity checking
+
+  xlnx,uart-odd-parity:
+    type: boolean
+    description: Use odd parity (default is even when parity enabled)
