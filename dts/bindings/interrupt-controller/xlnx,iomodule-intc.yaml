@@ -1,0 +1,45 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Xilinx IOModule Interrupt Controller (child of IOModule MFD)
+
+  This is the interrupt controller block within the IOModule.
+  It manages both internal IOModule peripheral interrupts (UART, PIT,
+  FIT, GPI) and up to 16 external interrupt inputs (bits 16-31).
+
+  This node must be a child of an xlnx,iomodule node.
+
+compatible: "xlnx,iomodule-intc"
+
+include: [interrupt-controller.yaml, base.yaml]
+
+properties:
+  "#interrupt-cells":
+    required: true
+    const: 2
+    description: |
+      Number of cells for interrupt specifiers.
+      Cell 0: IRQ number (0-31)
+      Cell 1: IRQ flags (e.g., edge/level sensitivity)
+
+  interrupt-controller:
+    required: true
+
+  xlnx,intc-has-fast:
+    type: boolean
+    description: Enable fast interrupt mode if available
+
+  xlnx,intc-level-edge:
+    type: int
+    default: 0
+    description: |
+      Bitmask indicating edge-triggered (1) vs level-triggered (0)
+      for external interrupts (bits 16-31).
+
+  xlnx,intc-positive:
+    type: int
+    default: 0xFFFF0000
+    description: |
+      Bitmask indicating active-high/rising-edge (1) vs
+      active-low/falling-edge (0) for external interrupts.
