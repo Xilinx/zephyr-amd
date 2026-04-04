@@ -1,0 +1,53 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Xilinx IOModule Programmable Interval Timer (PIT)
+  (child of IOModule MFD)
+
+  The IOModule contains up to 4 PITs. Each PIT has:
+    - A preload register
+    - A down-counter
+    - A control register (enable, auto-reload, interrupt enable)
+
+  PITs can be cascaded: PIT n+1 can use PIT n's output as its
+  prescaler/input clock.
+
+  This node must be a child of an xlnx,iomodule node.
+
+compatible: "xlnx,iomodule-pit"
+
+include: [base.yaml]
+
+properties:
+  xlnx,pit-timer-id:
+    type: int
+    required: true
+    description: |
+      Timer instance number (0-3). Determines register offset:
+        PIT0: offset 0x40-0x48
+        PIT1: offset 0x50-0x58
+        PIT2: offset 0x60-0x68
+        PIT3: offset 0x70-0x78
+
+  xlnx,pit-size:
+    type: int
+    default: 32
+    description: Counter width in bits (typically 32)
+
+  xlnx,pit-readable:
+    type: boolean
+    description: If present, the counter register is readable
+
+  xlnx,pit-prescaler:
+    type: int
+    default: 0
+    description: |
+      Clock prescaler value. 0 = use system clock directly.
+      When non-zero, PIT n uses PIT (n-1) output as input,
+      enabling cascade mode.
+
+  xlnx,clock-freq:
+    type: int
+    required: true
+    description: Input clock frequency in Hz
