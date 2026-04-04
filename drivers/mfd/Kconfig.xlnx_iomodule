@@ -1,0 +1,38 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+config MFD_XLNX_IOMODULE
+	bool "Xilinx IOModule MFD driver"
+	default y
+	depends on DT_HAS_XLNX_IOMODULE_ENABLED
+	help
+	  Enable the Xilinx IOModule Multi-Function Device driver.
+	  The IOModule is a composite soft IP peripheral containing:
+	  - Interrupt Controller (INTC)
+	  - UART (UartLite compatible)
+	  - Programmable Interval Timers (PIT)
+	  - Fixed Interval Timers (FIT)
+	  - General Purpose I/O (GPI/GPO)
+
+	  This parent driver manages the shared base address and IRQ line,
+	  dispatching interrupts to child peripheral drivers.
+
+config MFD_XLNX_IOMODULE_INIT_PRIORITY
+	int "IOModule MFD parent initialization priority"
+	default 49
+	depends on MFD_XLNX_IOMODULE
+	help
+	  Initialization priority for the IOModule MFD parent driver.
+	  Must be lower (earlier) than SERIAL_INIT_PRIORITY (default 50)
+	  so the parent is ready before the UART child initializes, and
+	  the UART is ready before CONSOLE_INIT_PRIORITY (default 60).
+
+config MFD_XLNX_IOMODULE_CHILD_INIT_PRIORITY
+	int "IOModule non-UART child driver initialization priority"
+	default 51
+	depends on MFD_XLNX_IOMODULE
+	help
+	  Initialization priority for IOModule child drivers (INTC, PIT).
+	  Must be higher (later) than MFD_XLNX_IOMODULE_INIT_PRIORITY
+	  so the parent device is ready before children initialize.
+	  The UART child uses SERIAL_INIT_PRIORITY (default 50) instead.
