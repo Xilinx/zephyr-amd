@@ -127,4 +127,6 @@ source "drivers/interrupt_controller/Kconfig.wch_exti"
 
 source "drivers/interrupt_controller/Kconfig.xlnx"
 
+source "drivers/interrupt_controller/Kconfig.xlnx_iomodule"
+
 endmenu

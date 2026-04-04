@@ -1,0 +1,17 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+config XLNX_IOMODULE_INTC
+	bool "Xilinx IOModule Interrupt Controller"
+	default y
+	depends on DT_HAS_XLNX_IOMODULE_INTC_ENABLED
+	depends on MFD_XLNX_IOMODULE
+	help
+	  Enable the interrupt controller within the Xilinx IOModule.
+	  This is a child driver of the IOModule MFD and provides the same
+	  xlnx_intc_irq_*() API as the AXI INTC driver.
+
+	  The IOModule INTC handles both internal peripheral interrupts
+	  (UART, PIT, FIT, GPI) and up to 16 external interrupt inputs.
+
+	  This is mutually exclusive with the AXI INTC driver (XLNX_INTC).
