@@ -1,0 +1,23 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+config XLNX_IOMODULE_PIT
+	bool "Xilinx IOModule PIT Timer"
+	default y
+	depends on DT_HAS_XLNX_IOMODULE_PIT_ENABLED
+	depends on MFD_XLNX_IOMODULE
+	help
+	  Enable the Programmable Interval Timer (PIT) within the Xilinx
+	  IOModule. The IOModule contains up to 4 PITs that can be used
+	  as system timers. Each PIT is a simple down-counter with
+	  auto-reload capability.
+
+	  This is a child driver of the IOModule MFD.
+
+if XLNX_IOMODULE_PIT
+
+module = XLNX_IOMODULE_PIT
+module-str = xlnx-iomodule-pit
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # XLNX_IOMODULE_PIT
