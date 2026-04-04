@@ -1,0 +1,27 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  AMD/Xilinx IOModule - Multi-Function Device
+
+  The IOModule is a composite soft IP peripheral for MicroBlaze containing:
+    - Interrupt Controller (INTC) with internal + external IRQ support
+    - UART (UartLite compatible)
+    - 4x Programmable Interval Timers (PIT)
+    - 4x Fixed Interval Timers (FIT)
+    - 4x General Purpose Input/Output (GPI/GPO)
+
+  All peripherals share a single base address and interrupt line.
+  Child nodes use compatible strings "xlnx,iomodule-intc",
+  "xlnx,iomodule-uart", and "xlnx,iomodule-pit".
+
+compatible: "xlnx,iomodule"
+
+include: [base.yaml]
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: true
