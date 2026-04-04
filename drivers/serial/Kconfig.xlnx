@@ -20,3 +20,15 @@ config UART_XLNX_UARTLITE
 	select SERIAL_SUPPORT_INTERRUPT
 	help
 	  This option enables the UART driver for Xilinx UART Lite IP.
+
+config UART_XLNX_IOMODULE
+	bool "Xilinx IOModule UART"
+	default y
+	depends on DT_HAS_XLNX_IOMODULE_UART_ENABLED
+	depends on MFD_XLNX_IOMODULE
+	select SERIAL_HAS_DRIVER
+	select SERIAL_SUPPORT_INTERRUPT
+	help
+	  This option enables the UART driver for the UART peripheral
+	  within the Xilinx IOModule. This is a child driver of the
+	  IOModule MFD.
