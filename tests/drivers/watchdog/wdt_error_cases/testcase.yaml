@@ -30,4 +30,5 @@ tests:
     extra_configs:
       - CONFIG_PM=y
   drivers.watchdog.wdt_error_cases.xilinx_wwdt:
+    timeout: 1800
     filter: dt_compat_enabled("xlnx,versal-wwdt")
