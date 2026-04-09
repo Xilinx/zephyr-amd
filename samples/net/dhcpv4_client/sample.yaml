@@ -6,3 +6,8 @@ tests:
     tags:
       - net
       - http
+    harness: console
+    harness_config:
+      type: one_line
+      regex:
+        - "Lease time\\[\\d+\\]: \\d+ seconds"
