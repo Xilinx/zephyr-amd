@@ -29,6 +29,11 @@
 #define SHARED_MEM_END		(SHARED_MEM_START + DT_REG_SIZE(SHM_NODE))
 #endif /* DT_HAS_CHOSEN(zephyr_ipc_shm) */
 
+#define AIE_REGION_ENTRY(node_id) \
+	MPU_REGION_ENTRY(DT_NODE_FULL_NAME(node_id), \
+			 DT_REG_ADDR(node_id), \
+			 REGION_DEVICE_ATTR(DT_REG_ADDR(node_id) + DT_REG_SIZE(node_id))),
+
 static const struct arm_mpu_region mpu_regions[] = {
 	MPU_REGION_ENTRY("vector",
 			 (uintptr_t)_vector_start,
@@ -55,6 +60,7 @@ static const struct arm_mpu_region mpu_regions[] = {
 			 REGION_SHARED_MEM_ATTR(SHARED_MEM_END)),
 #endif /* DT_HAS_CHOSEN(zephyr_ipc_shm) */
 
+	DT_FOREACH_STATUS_OKAY(xlnx_aiengine, AIE_REGION_ENTRY)
 	MPU_REGION_ENTRY("DEVICE_LPD_PL",
 			 DEVICE_LPD_PL_START,
 			 REGION_DEVICE_ATTR(DEVICE_LPD_PL_END)),
