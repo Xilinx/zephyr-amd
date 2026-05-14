@@ -672,11 +672,11 @@ static int xcanfd_set_timing(const struct device *dev,
 	if (ret == 0) {
 		btr0 = (calc_timing.prescaler - 1) & XCANFD_BRPR_BRP_MASK;
 		btr1 = ((calc_timing.prop_seg + calc_timing.phase_seg1 - 1)) &
-			XCANFD_BTR_TS1_MASK;
-		btr1 |= (((calc_timing.phase_seg2 - 1) << XCANFD_BTR_TS2_SHIFT) &
-			 XCANFD_BTR_TS2_MASK);
-		btr1 |= (((calc_timing.sjw - 1) << XCANFD_BTR_SJW_SHIFT) &
-			 XCANFD_BTR_SJW_MASK);
+			XCANFD_BTR_TS1_MASK_CANFD;
+		btr1 |= (((calc_timing.phase_seg2 - 1) << XCANFD_BTR_TS2_SHIFT_CANFD) &
+			 XCANFD_BTR_TS2_MASK_CANFD);
+		btr1 |= (((calc_timing.sjw - 1) << XCANFD_BTR_SJW_SHIFT_CANFD) &
+			 XCANFD_BTR_SJW_MASK_CANFD);
 		xcanfd_write32(config, XCANFD_BRPR_OFFSET, btr0);
 		xcanfd_write32(config, XCANFD_BTR_OFFSET, btr1);
 	}
