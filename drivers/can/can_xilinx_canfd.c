@@ -592,9 +592,9 @@ static int xcanfd_set_timing_data(const struct device *dev,
 	ret = can_calc_timing_data(dev, &calc_timing_data, config->common.bitrate_data,
 				   config->common.sample_point_data);
 
-	if (ret == -EINVAL) {
-		LOG_ERR("Failed to calculate valid timing parameters");
-		return -EIO;
+	if (ret < 0) {
+		LOG_ERR("Failed to calculate timing parameters: %d", ret);
+		return ret;
 	}
 
 	is_config_mode = xcanfd_read32(config, XCANFD_SR_OFFSET) & XCANFD_SR_CONFIG_MASK;
@@ -603,18 +603,17 @@ static int xcanfd_set_timing_data(const struct device *dev,
 		return -EIO;
 	}
 
-	if (ret == 0) {
-		btr0 = (calc_timing_data.prescaler - 1) & XCANFD_BRPR_BRP_MASK;
-		btr1 = ((calc_timing_data.prop_seg + calc_timing_data.phase_seg1 - 1)) &
-			XCANFD_BTR_TS1_MASK_CANFD;
-		btr1 |= (((calc_timing_data.phase_seg2 - 1) << XCANFD_BTR_TS2_SHIFT_CANFD) &
-			 XCANFD_BTR_TS2_MASK_CANFD);
-		btr1 |= (((calc_timing_data.sjw - 1) << XCANFD_BTR_SJW_SHIFT_CANFD) &
-			 XCANFD_BTR_SJW_MASK_CANFD);
+	btr0 = (calc_timing_data.prescaler - 1) & XCANFD_BRPR_BRP_MASK;
+	btr1 = ((calc_timing_data.prop_seg + calc_timing_data.phase_seg1 - 1)) &
+		XCANFD_BTR_TS1_MASK_CANFD;
+	btr1 |= (((calc_timing_data.phase_seg2 - 1) << XCANFD_BTR_TS2_SHIFT_CANFD) &
+		 XCANFD_BTR_TS2_MASK_CANFD);
+	btr1 |= (((calc_timing_data.sjw - 1) << XCANFD_BTR_SJW_SHIFT_CANFD) &
+		 XCANFD_BTR_SJW_MASK_CANFD);
 
-		xcanfd_write32(config, XCANFD_F_BRPR_OFFSET, btr0);
-		xcanfd_write32(config, XCANFD_F_BTR_OFFSET, btr1);
-	}
+	xcanfd_write32(config, XCANFD_F_BRPR_OFFSET, btr0);
+	xcanfd_write32(config, XCANFD_F_BTR_OFFSET, btr1);
+
 	return 0;
 #else
 	ARG_UNUSED(dev);
@@ -664,22 +663,21 @@ static int xcanfd_set_timing(const struct device *dev,
 	ret = can_calc_timing(dev, &calc_timing, config->common.bitrate,
 			config->common.sample_point);
 
-	if (ret == -EINVAL) {
-		LOG_ERR("Failed to calculate valid timing parameters");
-		return -EIO;
+	if (ret < 0) {
+		LOG_ERR("Failed to calculate timing parameters: %d", ret);
+		return ret;
 	}
 
-	if (ret == 0) {
-		btr0 = (calc_timing.prescaler - 1) & XCANFD_BRPR_BRP_MASK;
-		btr1 = ((calc_timing.prop_seg + calc_timing.phase_seg1 - 1)) &
-			XCANFD_BTR_TS1_MASK_CANFD;
-		btr1 |= (((calc_timing.phase_seg2 - 1) << XCANFD_BTR_TS2_SHIFT_CANFD) &
-			 XCANFD_BTR_TS2_MASK_CANFD);
-		btr1 |= (((calc_timing.sjw - 1) << XCANFD_BTR_SJW_SHIFT_CANFD) &
-			 XCANFD_BTR_SJW_MASK_CANFD);
-		xcanfd_write32(config, XCANFD_BRPR_OFFSET, btr0);
-		xcanfd_write32(config, XCANFD_BTR_OFFSET, btr1);
-	}
+	btr0 = (calc_timing.prescaler - 1) & XCANFD_BRPR_BRP_MASK;
+	btr1 = ((calc_timing.prop_seg + calc_timing.phase_seg1 - 1)) &
+		XCANFD_BTR_TS1_MASK_CANFD;
+	btr1 |= (((calc_timing.phase_seg2 - 1) << XCANFD_BTR_TS2_SHIFT_CANFD) &
+		 XCANFD_BTR_TS2_MASK_CANFD);
+	btr1 |= (((calc_timing.sjw - 1) << XCANFD_BTR_SJW_SHIFT_CANFD) &
+		 XCANFD_BTR_SJW_MASK_CANFD);
+	xcanfd_write32(config, XCANFD_BRPR_OFFSET, btr0);
+	xcanfd_write32(config, XCANFD_BTR_OFFSET, btr1);
+
 	return 0;
 }
 
