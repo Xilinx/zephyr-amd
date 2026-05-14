@@ -400,7 +400,6 @@ static int xcanfd_set_mode(const struct device *dev, can_mode_t mode)
 	const struct xcanfd_cfg *config = dev->config;
 	struct xcanfd_data *data = dev->data;
 	uint32_t msr_reg = 0;
-	uint32_t brpr = 0;
 	int ret = 0;
 
 	if (IS_ENABLED(CONFIG_CAN_FD_MODE)) {
@@ -437,11 +436,7 @@ static int xcanfd_set_mode(const struct device *dev, can_mode_t mode)
 	}
 
 	if ((mode & CAN_MODE_FD) != 0) {
-		if (IS_ENABLED(CONFIG_CAN_FD_MODE)) {
-			brpr = xcanfd_read32(config, XCANFD_BRPR_OFFSET);
-			brpr |= XCANFD_BRPR_TDC_ENABLE_MASK;
-			xcanfd_write32(config, XCANFD_BRPR_OFFSET, brpr);
-		} else {
+		if (!IS_ENABLED(CONFIG_CAN_FD_MODE)) {
 			LOG_ERR("CONFIG_CAN_FD_MODE is not enabled");
 			ret = -ENOTSUP;
 			goto unlock;
@@ -604,6 +599,16 @@ static int xcanfd_set_timing_data(const struct device *dev,
 	}
 
 	btr0 = (calc_timing_data.prescaler - 1) & XCANFD_BRPR_BRP_MASK;
+
+	if (calc_timing_data.prescaler <= 2U) {
+		uint32_t tdco = CLAMP((calc_timing_data.prescaler *
+				(1U + calc_timing_data.prop_seg +
+				 calc_timing_data.phase_seg1)), 0U, 63U);
+
+		btr0 |= FIELD_PREP(XCANFD_2_BRPR_TDCO_MASK, tdco);
+		btr0 |= XCANFD_BRPR_TDC_ENABLE_MASK;
+	}
+
 	btr1 = ((calc_timing_data.prop_seg + calc_timing_data.phase_seg1 - 1)) &
 		XCANFD_BTR_TS1_MASK_CANFD;
 	btr1 |= (((calc_timing_data.phase_seg2 - 1) << XCANFD_BTR_TS2_SHIFT_CANFD) &
