@@ -6,8 +6,6 @@ compatible: xlnx,canfd-2.0
 
 include: ["can-controller.yaml", "can-fd-controller.yaml"]
 
-include: base.yaml
-
 properties:
   reg:
     required: true
