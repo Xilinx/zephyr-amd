@@ -951,7 +951,8 @@ static int set_reset_mode(const struct device *dev)
 static int xcanfd_get_core_clock(const struct device *dev, uint32_t *rate)
 {
 	const struct xcanfd_cfg *config = dev->config;
-	*rate = DIV_ROUND_CLOSEST(config->can_core_clock, 1000000U) * 1000000U;
+	/* The CANFD IP internally divides its input clock by 2 */
+	*rate = DIV_ROUND_CLOSEST(config->can_core_clock / 2, 1000000U) * 1000000U;
 	return 0;
 }
 
