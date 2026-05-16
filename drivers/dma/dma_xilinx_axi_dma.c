@@ -13,6 +13,7 @@
 #include <zephyr/irq.h>
 #include <zephyr/sys/barrier.h>
 #include <zephyr/sys/sys_io.h>
+#include <zephyr/sys/util.h>
 #include <zephyr/cache.h>
 
 #include "dma_xilinx_axi_dma.h"
@@ -967,7 +968,6 @@ static int dma_xilinx_axi_dma_init(const struct device *dev)
 {
 	const struct dma_xilinx_axi_dma_config *cfg = dev->config;
 	struct dma_xilinx_axi_dma_data *data = dev->data;
-	bool reset = false;
 
 	if (cfg->channels != XILINX_AXI_DMA_NUM_CHANNELS) {
 		LOG_ERR("Invalid number of configured channels (%" PRIu32
@@ -991,18 +991,11 @@ static int dma_xilinx_axi_dma_init(const struct device *dev)
 	dma_xilinx_axi_dma_write_reg(&data->channels[XILINX_AXI_DMA_RX_CHANNEL_NUM],
 				     XILINX_AXI_DMA_REG_DMACR, XILINX_AXI_DMA_REGS_DMACR_RESET);
 
-	for (int i = 0; i < XILINX_AXI_DMA_RESET_TIMEOUT_MS; i++) {
-		if (dma_xilinx_axi_dma_read_reg(&data->channels[XILINX_AXI_DMA_RX_CHANNEL_NUM],
-						XILINX_AXI_DMA_REG_DMACR) &
-		    XILINX_AXI_DMA_REGS_DMACR_RESET) {
-			k_msleep(1);
-		} else {
-			reset = true;
-			break;
-		}
-	}
-
-	if (!reset) {
+	if (!WAIT_FOR(!(dma_xilinx_axi_dma_read_reg(
+				  &data->channels[XILINX_AXI_DMA_RX_CHANNEL_NUM],
+				  XILINX_AXI_DMA_REG_DMACR) &
+			XILINX_AXI_DMA_REGS_DMACR_RESET),
+		      XILINX_AXI_DMA_RESET_TIMEOUT_MS * USEC_PER_MSEC, k_msleep(1))) {
 		LOG_ERR("DMA reset timed out!");
 		return -EIO;
 	}
