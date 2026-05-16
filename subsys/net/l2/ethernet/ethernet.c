@@ -249,7 +249,7 @@ static void ethernet_mcast_monitor_cb(struct net_if *iface, const struct net_add
 		return;
 	}
 
-	api->set_config(dev, ETHERNET_CONFIG_TYPE_FILTER, &cfg);
+	api->set_config(dev, iface, ETHERNET_CONFIG_TYPE_FILTER, &cfg);
 }
 #endif
 
@@ -828,11 +828,11 @@ static inline int ethernet_enable(struct net_if *iface, bool state)
 		net_arp_clear_cache(iface);
 
 		if (eth->stop) {
-			ret = eth->stop(net_if_get_device(iface));
+			ret = eth->stop(net_if_get_device(iface), iface);
 		}
 	} else {
 		if (eth->start) {
-			ret = eth->start(net_if_get_device(iface));
+			ret = eth->start(net_if_get_device(iface), iface);
 		}
 	}
 
@@ -934,7 +934,7 @@ const struct device *net_eth_get_phy(struct net_if *iface)
 		return NULL;
 	}
 
-	return api->get_phy(net_if_get_device(iface));
+	return api->get_phy(net_if_get_device(iface), iface);
 }
 
 #if defined(CONFIG_PTP_CLOCK)
@@ -959,7 +959,7 @@ const struct device *net_eth_get_ptp_clock(struct net_if *iface)
 		return NULL;
 	}
 
-	return api->get_ptp_clock(net_if_get_device(iface));
+	return api->get_ptp_clock(net_if_get_device(iface), iface);
 }
 #endif /* CONFIG_PTP_CLOCK */
 
