@@ -232,6 +232,8 @@ struct dma_xilinx_axi_dma_channel {
 struct dma_xilinx_axi_dma_data {
 	struct dma_context ctx;
 	struct dma_xilinx_axi_dma_channel *channels;
+	/* Set by dma_stop(); dma_configure() performs a DMA soft-reset then clears it. */
+	bool needs_dma_soft_reset;
 };
 
 /*
@@ -607,6 +609,9 @@ static int dma_xilinx_axi_dma_stop(const struct device *dev, uint32_t channel)
 		channel_data->num_descriptors = 0;
 	}
 
+	/* Flag DMA soft reset on next dma_configure(). */
+	data->needs_dma_soft_reset = true;
+
 	return 0;
 }
 
@@ -744,6 +749,30 @@ static inline int dma_xilinx_axi_dma_config_reload(const struct device *dev, uin
 		true);
 }
 
+/* Soft-reset the DMA core if dma_stop() flagged it as needed. */
+static int dma_xilinx_axi_dma_soft_reset_if_needed(struct dma_xilinx_axi_dma_data *data)
+{
+	if (!data->needs_dma_soft_reset) {
+		return 0;
+	}
+
+	LOG_INF("Soft-resetting the DMA core before re-configure!");
+	dma_xilinx_axi_dma_write_reg(&data->channels[XILINX_AXI_DMA_RX_CHANNEL_NUM],
+				     XILINX_AXI_DMA_REG_DMACR,
+				     XILINX_AXI_DMA_REGS_DMACR_RESET);
+	if (!WAIT_FOR(!(dma_xilinx_axi_dma_read_reg(
+				  &data->channels[XILINX_AXI_DMA_RX_CHANNEL_NUM],
+				  XILINX_AXI_DMA_REG_DMACR) &
+			XILINX_AXI_DMA_REGS_DMACR_RESET),
+		      XILINX_AXI_DMA_RESET_TIMEOUT_MS * USEC_PER_MSEC, k_msleep(1))) {
+		LOG_ERR("DMA reset timed out!");
+		return -EIO;
+	}
+
+	data->needs_dma_soft_reset = false;
+	return 0;
+}
+
 static int dma_xilinx_axi_dma_configure(const struct device *dev, uint32_t channel,
 					struct dma_config *dma_cfg)
 {
@@ -791,6 +820,13 @@ static int dma_xilinx_axi_dma_configure(const struct device *dev, uint32_t chann
 	    dma_cfg->channel_direction != PERIPHERAL_TO_MEMORY) {
 		LOG_ERR("RX channel must be used with PERIPHERAL_TO_MEMORY!");
 		return -ENOTSUP;
+	}
+
+	/* After dma_stop(), soft-reset the DMA to clear any error bits before re-use. */
+	int err = dma_xilinx_axi_dma_soft_reset_if_needed(data);
+
+	if (err) {
+		return err;
 	}
 
 	/* Allocate the SG descriptor ring.
