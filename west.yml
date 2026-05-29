@@ -310,7 +310,7 @@ manifest:
       revision: 8f5ca347843363882619d8f96c00d8dbd88a8e79
     - name: lopper
       repo-path: lopper
-      revision: 375bceee9ec6cdc059674ec4bd2971079cb71b15
+      revision: 0c3cfa9f5fc739f3e429330521b4a3c5cdd66563
       remote: devicetree-org
     - name: lora-basics-modem
       revision: 9a14f6772c1d6e303bacb2d594c8063bb804b6ee
