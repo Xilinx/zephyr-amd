@@ -400,7 +400,6 @@ static int xcanfd_set_mode(const struct device *dev, can_mode_t mode)
 	const struct xcanfd_cfg *config = dev->config;
 	struct xcanfd_data *data = dev->data;
 	uint32_t msr_reg = 0;
-	uint32_t brpr = 0;
 	int ret = 0;
 
 	if (IS_ENABLED(CONFIG_CAN_FD_MODE)) {
@@ -437,11 +436,7 @@ static int xcanfd_set_mode(const struct device *dev, can_mode_t mode)
 	}
 
 	if ((mode & CAN_MODE_FD) != 0) {
-		if (IS_ENABLED(CONFIG_CAN_FD_MODE)) {
-			brpr = xcanfd_read32(config, XCANFD_BRPR_OFFSET);
-			brpr |= XCANFD_BRPR_TDC_ENABLE_MASK;
-			xcanfd_write32(config, XCANFD_BRPR_OFFSET, brpr);
-		} else {
+		if (!IS_ENABLED(CONFIG_CAN_FD_MODE)) {
 			LOG_ERR("CONFIG_CAN_FD_MODE is not enabled");
 			ret = -ENOTSUP;
 			goto unlock;
@@ -592,9 +587,9 @@ static int xcanfd_set_timing_data(const struct device *dev,
 	ret = can_calc_timing_data(dev, &calc_timing_data, config->common.bitrate_data,
 				   config->common.sample_point_data);
 
-	if (ret == -EINVAL) {
-		LOG_ERR("Failed to calculate valid timing parameters");
-		return -EIO;
+	if (ret < 0) {
+		LOG_ERR("Failed to calculate timing parameters: %d", ret);
+		return ret;
 	}
 
 	is_config_mode = xcanfd_read32(config, XCANFD_SR_OFFSET) & XCANFD_SR_CONFIG_MASK;
@@ -603,18 +598,27 @@ static int xcanfd_set_timing_data(const struct device *dev,
 		return -EIO;
 	}
 
-	if (ret == 0) {
-		btr0 = (calc_timing_data.prescaler - 1) & XCANFD_BRPR_BRP_MASK;
-		btr1 = ((calc_timing_data.prop_seg + calc_timing_data.phase_seg1 - 1)) &
-			XCANFD_BTR_TS1_MASK_CANFD;
-		btr1 |= (((calc_timing_data.phase_seg2 - 1) << XCANFD_BTR_TS2_SHIFT_CANFD) &
-			 XCANFD_BTR_TS2_MASK_CANFD);
-		btr1 |= (((calc_timing_data.sjw - 1) << XCANFD_BTR_SJW_SHIFT_CANFD) &
-			 XCANFD_BTR_SJW_MASK_CANFD);
+	btr0 = (calc_timing_data.prescaler - 1) & XCANFD_BRPR_BRP_MASK;
 
-		xcanfd_write32(config, XCANFD_F_BRPR_OFFSET, btr0);
-		xcanfd_write32(config, XCANFD_F_BTR_OFFSET, btr1);
+	if (calc_timing_data.prescaler <= 2U) {
+		uint32_t tdco = CLAMP((calc_timing_data.prescaler *
+				(1U + calc_timing_data.prop_seg +
+				 calc_timing_data.phase_seg1)), 0U, 63U);
+
+		btr0 |= FIELD_PREP(XCANFD_2_BRPR_TDCO_MASK, tdco);
+		btr0 |= XCANFD_BRPR_TDC_ENABLE_MASK;
 	}
+
+	btr1 = ((calc_timing_data.prop_seg + calc_timing_data.phase_seg1 - 1)) &
+		XCANFD_BTR_TS1_MASK_CANFD;
+	btr1 |= (((calc_timing_data.phase_seg2 - 1) << XCANFD_BTR_TS2_SHIFT_CANFD) &
+		 XCANFD_BTR_TS2_MASK_CANFD);
+	btr1 |= (((calc_timing_data.sjw - 1) << XCANFD_BTR_SJW_SHIFT_CANFD) &
+		 XCANFD_BTR_SJW_MASK_CANFD);
+
+	xcanfd_write32(config, XCANFD_F_BRPR_OFFSET, btr0);
+	xcanfd_write32(config, XCANFD_F_BTR_OFFSET, btr1);
+
 	return 0;
 #else
 	ARG_UNUSED(dev);
@@ -664,22 +668,21 @@ static int xcanfd_set_timing(const struct device *dev,
 	ret = can_calc_timing(dev, &calc_timing, config->common.bitrate,
 			config->common.sample_point);
 
-	if (ret == -EINVAL) {
-		LOG_ERR("Failed to calculate valid timing parameters");
-		return -EIO;
+	if (ret < 0) {
+		LOG_ERR("Failed to calculate timing parameters: %d", ret);
+		return ret;
 	}
 
-	if (ret == 0) {
-		btr0 = (calc_timing.prescaler - 1) & XCANFD_BRPR_BRP_MASK;
-		btr1 = ((calc_timing.prop_seg + calc_timing.phase_seg1 - 1)) &
-			XCANFD_BTR_TS1_MASK;
-		btr1 |= (((calc_timing.phase_seg2 - 1) << XCANFD_BTR_TS2_SHIFT) &
-			 XCANFD_BTR_TS2_MASK);
-		btr1 |= (((calc_timing.sjw - 1) << XCANFD_BTR_SJW_SHIFT) &
-			 XCANFD_BTR_SJW_MASK);
-		xcanfd_write32(config, XCANFD_BRPR_OFFSET, btr0);
-		xcanfd_write32(config, XCANFD_BTR_OFFSET, btr1);
-	}
+	btr0 = (calc_timing.prescaler - 1) & XCANFD_BRPR_BRP_MASK;
+	btr1 = ((calc_timing.prop_seg + calc_timing.phase_seg1 - 1)) &
+		XCANFD_BTR_TS1_MASK_CANFD;
+	btr1 |= (((calc_timing.phase_seg2 - 1) << XCANFD_BTR_TS2_SHIFT_CANFD) &
+		 XCANFD_BTR_TS2_MASK_CANFD);
+	btr1 |= (((calc_timing.sjw - 1) << XCANFD_BTR_SJW_SHIFT_CANFD) &
+		 XCANFD_BTR_SJW_MASK_CANFD);
+	xcanfd_write32(config, XCANFD_BRPR_OFFSET, btr0);
+	xcanfd_write32(config, XCANFD_BTR_OFFSET, btr1);
+
 	return 0;
 }
 
@@ -951,7 +954,8 @@ static int set_reset_mode(const struct device *dev)
 static int xcanfd_get_core_clock(const struct device *dev, uint32_t *rate)
 {
 	const struct xcanfd_cfg *config = dev->config;
-	*rate = DIV_ROUND_CLOSEST(config->can_core_clock, 1000000U) * 1000000U;
+	/* The CANFD IP internally divides its input clock by 2 */
+	*rate = DIV_ROUND_CLOSEST(config->can_core_clock / 2, 1000000U) * 1000000U;
 	return 0;
 }
 

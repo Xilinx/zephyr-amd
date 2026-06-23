@@ -4,6 +4,8 @@ zephyr_library()
 zephyr_library_property(ALLOW_EMPTY TRUE)
 zephyr_library_include_directories(${ZEPHYR_BASE}/subsys/net/l2)
 
+add_subdirectory_ifdef(CONFIG_MDIO mdio)
+
 zephyr_library_sources_ifdef(CONFIG_ETH_DRIVER_RAW_MODE
   eth_raw.c
   )
