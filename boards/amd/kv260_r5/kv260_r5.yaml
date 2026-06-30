@@ -11,7 +11,6 @@ supported:
   - gpio
   - spi
   - flash
-  - rtc
 testing:
   ignore_tags:
     - net
