@@ -237,6 +237,14 @@ typedef int (*counter_api_set_guard_period)(const struct device *dev,
 						uint32_t flags);
 typedef uint32_t (*counter_api_get_freq)(const struct device *dev);
 
+/** @brief Callback API to set counter calibration in parts per billion. */
+typedef int (*counter_api_set_calibration)(const struct device *dev, int32_t calibration);
+/** @brief Callback API to get counter calibration in parts per billion. */
+typedef int (*counter_api_get_calibration)(const struct device *dev, int32_t *calibration);
+
+/**
+ * @driver_ops{Counter}
+ */
 __subsystem struct counter_driver_api {
 	counter_api_start start;
 	counter_api_stop stop;
@@ -253,6 +261,16 @@ __subsystem struct counter_driver_api {
 	counter_api_get_guard_period get_guard_period;
 	counter_api_set_guard_period set_guard_period;
 	counter_api_get_freq get_freq;
+#if defined(CONFIG_COUNTER_CALIBRATION) || defined(__DOXYGEN__)
+	/**
+	 * @driver_ops_optional @copybrief counter_set_calibration
+	 */
+	counter_api_set_calibration set_calibration;
+	/**
+	 * @driver_ops_optional @copybrief counter_get_calibration
+	 */
+	counter_api_get_calibration get_calibration;
+#endif /* CONFIG_COUNTER_CALIBRATION */
 };
 
 /**
@@ -761,6 +779,56 @@ static inline uint32_t z_impl_counter_get_guard_period(const struct device *dev,
 
 	return (api->get_guard_period) ? api->get_guard_period(dev, flags) : 0;
 }
+
+#if defined(CONFIG_COUNTER_CALIBRATION) || defined(__DOXYGEN__)
+/**
+ * @brief Set counter calibration value.
+ *
+ * Calibration is specified in parts per billion (ppb). A positive value
+ * speeds up the counter, a negative value slows it down.
+ *
+ * @param dev Pointer to the device structure for the driver instance.
+ * @param calibration Calibration value in ppb.
+ *
+ * @retval 0 If successful.
+ * @retval -EINVAL if calibration value is out of range.
+ * @retval -ENOSYS if not supported by the driver.
+ */
+__syscall int counter_set_calibration(const struct device *dev, int32_t calibration);
+
+static inline int z_impl_counter_set_calibration(const struct device *dev, int32_t calibration)
+{
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
+
+	if (!api->set_calibration) {
+		return -ENOSYS;
+	}
+
+	return api->set_calibration(dev, calibration);
+}
+
+/**
+ * @brief Get counter calibration value.
+ *
+ * @param dev Pointer to the device structure for the driver instance.
+ * @param calibration Pointer to store the calibration value in ppb.
+ *
+ * @retval 0 If successful.
+ * @retval -ENOSYS if not supported by the driver.
+ */
+__syscall int counter_get_calibration(const struct device *dev, int32_t *calibration);
+
+static inline int z_impl_counter_get_calibration(const struct device *dev, int32_t *calibration)
+{
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
+
+	if (!api->get_calibration) {
+		return -ENOSYS;
+	}
+
+	return api->get_calibration(dev, calibration);
+}
+#endif /* CONFIG_COUNTER_CALIBRATION */
 
 #ifdef __cplusplus
 }
