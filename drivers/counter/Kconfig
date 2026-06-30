@@ -141,4 +141,5 @@ source "drivers/counter/Kconfig.mspm0"
 
 source "drivers/counter/Kconfig.xlnx_ttc"
 
+source "drivers/counter/Kconfig.xlnx_zynqmp_rtc"
 endif # COUNTER
