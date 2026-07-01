@@ -1,5 +1,5 @@
 #
-#  Copyright (c) 2025 Advanced Micro Devices.
+#  Copyright (c) 2026 Advanced Micro Devices.
 #
 #  SPDX-License-Identifier: Apache-2.0
 
@@ -7,4 +7,4 @@ description: XILINX ADMA
 
 compatible: "amd,versal2-dma-1.0"
 
-include: xlnx,adma.yaml
+include: xlnx,zynqmp-dma-1.0.yaml

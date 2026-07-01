@@ -1,5 +1,5 @@
 #
-#  Copyright (c) 2025 Advanced Micro Devices.
+#  Copyright (c) 2026 Advanced Micro Devices.
 #
 #  SPDX-License-Identifier: Apache-2.0
 
@@ -24,7 +24,3 @@ properties:
 
   clock-names:
     required: true
-
-  xlnx,bus-width:
-    type: int
-    enum: [64, 128]
