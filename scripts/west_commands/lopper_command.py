@@ -305,10 +305,6 @@ class LopperCommand(WestCommand):
         paths = {
             'generated_dts': workspace / "mbv32.dts",
             'workspace_dts': Path(ws_dir) / "boards" / "amd" / "mbv32" / "mbv32.dts",
-            'workspace_kconfig_defconfig': Path(ws_dir) / "soc" / "xlnx" / "mbv32" / "Kconfig.defconfig",
-            'generated_kconfig_defconfig': workspace / "Kconfig.defconfig",
-            'workspace_kconfig_soc': Path(ws_dir) / "soc" / "xlnx" / "mbv32" / "Kconfig",
-            'generated_kconfig_soc': workspace / "Kconfig",
             'generated_board_dt': workspace / "board.overlay",
             'workspace_board_overlay': Path(ws_dir) / "boards" / "amd" / "mbv32" / "mbv32.overlay",
             'workspace_board_defconfig': Path(ws_dir) / "boards" / "amd" / "mbv32" / "Kconfig.defconfig",
@@ -331,8 +327,6 @@ class LopperCommand(WestCommand):
         # Copy generated files to workspace
         self._copy_files([
             (paths['generated_dts'], paths['workspace_dts']),
-            (paths['generated_kconfig_defconfig'], paths['workspace_kconfig_defconfig']),
-            (paths['generated_kconfig_soc'], paths['workspace_kconfig_soc']),
             (paths['generated_board_defconfig'], paths['workspace_board_defconfig'])
         ])
 
