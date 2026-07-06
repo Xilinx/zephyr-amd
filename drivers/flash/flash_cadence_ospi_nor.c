@@ -88,7 +88,7 @@ int flash_stig_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, uint32_t
 
 	if (dummy > ((1 << CAD_QSPI_FLASHCMD_NUM_DUMMYBYTES_MAX) - 1)) {
 		LOG_ERR("Faulty dummy bytes\n");
-		return -1;
+		return -EINVAL;
 	}
 
 	/* check for the controller idle */
@@ -131,11 +131,11 @@ int flash_stig_read_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, uin
 
 	if (dummy > ((1 << CAD_QSPI_FLASHCMD_NUM_DUMMYBYTES_MAX) - 1)) {
 		LOG_ERR("Faulty dummy byes\n");
-		return -1;
+		return -EINVAL;
 	}
 
 	if (num_bytes > 8 || num_bytes == 0)
-		return -1;
+		return -EINVAL;
 
 	if (!cad_params) {
 		LOG_ERR("Wrong parameter\n");
@@ -159,7 +159,7 @@ int flash_stig_read_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, uin
 	if (cad_qspi_stig_cmd_helper(cad_params, cad_params->cad_qspi_cs,
 				     cmd, NULL, output, num_bytes, 0)) {
 		LOG_ERR("failed to send stig cmd\n");
-		return -1;
+		return -EIO;
 	}
 
 	/* check for the controller idle */
@@ -180,11 +180,11 @@ int flash_stig_wr_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, uint3
 
 	if (dummy > ((1 << CAD_QSPI_FLASHCMD_NUM_DUMMYBYTES_MAX) - 1)) {
 		LOG_ERR("Faulty dummy byes\n");
-		return -1;
+		return -EINVAL;
 	}
 
 	if (num_bytes > 8 || num_bytes == 0)
-		return -1;
+		return -EINVAL;
 
 	if (!cad_params) {
 		LOG_ERR("Wrong parameter\n");
@@ -209,7 +209,7 @@ int flash_stig_addr_cmd(struct cad_qspi_params *cad_params, uint32_t opcode, uin
 	int status;
 
 	if (dummy > ((1 << CAD_QSPI_FLASHCMD_NUM_DUMMYBYTES_MAX) - 1))
-		return -1;
+		return -EINVAL;
 
 	if (!cad_params) {
 		LOG_ERR("Wrong parameter\n");
@@ -279,7 +279,7 @@ int flash_mt35x_wait_for_program_and_erase(struct cad_qspi_params *cad_params, i
 		status = flash_device_status(cad_params, &status);
 		if (status != 0) {
 			LOG_ERR("Error getting device status\n");
-			return -1;
+			return -EIO;
 		}
 		if (!CAD_QSPI_STIG_SR_BUSY(status))
 			break;
@@ -288,7 +288,7 @@ int flash_mt35x_wait_for_program_and_erase(struct cad_qspi_params *cad_params, i
 
 	if (count >= CAD_QSPI_COMMAND_TIMEOUT) {
 		LOG_ERR("Timed out waiting for idle\n");
-		return -1;
+		return -ETIMEDOUT;
 	}
 
 	count = 0;
@@ -313,7 +313,7 @@ int flash_mt35x_wait_for_program_and_erase(struct cad_qspi_params *cad_params, i
 	    (!program_only && CAD_QSPI_STIG_FLAGSR_ERASEERROR(flag_sr))) {
 		LOG_ERR("Error programming/erasing flash\n");
 		flash_stig_cmd(cad_params, CAD_QSPI_STIG_OPCODE_CLFSR, 0);
-		return -1;
+		return -EIO;
 	}
 
 	return 0;
@@ -479,7 +479,7 @@ int flash_ospi_erase(struct cad_qspi_params *cad_params, uint32_t offset, uint32
 			status = flash_device_status(cad_params, &status);
 			if (status != 0) {
 				LOG_ERR("Error getting device status\n");
-				return -1;
+				return -EIO;
 			}
 			if (!CAD_QSPI_STIG_SR_BUSY(status))
 				break;
@@ -488,7 +488,7 @@ int flash_ospi_erase(struct cad_qspi_params *cad_params, uint32_t offset, uint32
 
 		if (count >= CAD_QSPI_COMMAND_TIMEOUT) {
 			LOG_ERR("Timed out waiting for idle\n");
-			return -1;
+			return -ETIMEDOUT;
 		}
 #endif
 		addr += CAD_QSPI_SECTOR_SIZE;
@@ -740,7 +740,7 @@ uint32_t flash_enter_exit_4BAdd_Mode(struct cad_qspi_params *param, uint32_t ena
 		status = flash_device_status(param, &status);
 		if (status != 0) {
 			LOG_ERR("Error getting device status\n");
-			return -1;
+			return -EIO;
 		}
 		if (!CAD_QSPI_STIG_SR_BUSY(status))
 			break;
@@ -749,7 +749,7 @@ uint32_t flash_enter_exit_4BAdd_Mode(struct cad_qspi_params *param, uint32_t ena
 
 	if (count >= CAD_QSPI_COMMAND_TIMEOUT) {
 		LOG_ERR("Timed out waiting for idle\n");
-		return -1;
+		return -ETIMEDOUT;
 	}
 	return 0;
 }
