@@ -11,6 +11,17 @@
 extern const uint32_t __rom_region_start;
 extern const uint32_t __rom_region_mpu_size_bits;
 
+/*
+ * This tree does not yet carry the upstream <zephyr/devicetree/sram.h>
+ * chosen-SRAM macros, so derive them locally from the zephyr,sram chosen node.
+ */
+#ifndef DT_CHOSEN_SRAM_ADDR
+#define DT_CHOSEN_SRAM_ADDR DT_REG_ADDR(DT_CHOSEN(zephyr_sram))
+#endif
+#ifndef DT_CHOSEN_SRAM_SIZE
+#define DT_CHOSEN_SRAM_SIZE DT_REG_SIZE(DT_CHOSEN(zephyr_sram))
+#endif
+
 #if DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_ipc_shm), okay)
 BUILD_ASSERT((DT_REG_SIZE(DT_CHOSEN(zephyr_ipc_shm)) % 1024U) == 0U,
 	     "zephyr,ipc_shm size must be a multiple of 1 KiB");
