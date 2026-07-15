@@ -4,6 +4,8 @@
 identifier: zynqmp_rpu
 name: AMD ZynqMP RPU
 arch: arm
+simulation:
+  - name: qemu
 toolchain:
   - zephyr
 ram: 262144
