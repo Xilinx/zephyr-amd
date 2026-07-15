@@ -401,6 +401,30 @@ class LopperCommand(WestCommand):
         if zephyr_board_dts:
             self._copy_files([((os.path.join(workspace, "board.overlay")), workspace_overlay)])
 
+    def _process_cortexa53(self, workspace: Path, ws_dir: str, sdt: Path,
+                          proc: str, lops_dir: Optional[Path],
+                          zephyr_board_dts: Optional[Path],
+                          lopper_cmd: str) -> None:
+        """Process Cortex-A53 processor."""
+        logger.info("Processing Cortex-A53 processor")
+
+        lops_file = self._lop_path(lops_dir, "lop-a53-imux.dts")
+        workspace_dts = Path(ws_dir) / "boards" / "amd" / "zynqmp_apu" / "zynqmp_apu.dts"
+        workspace_overlay = Path(ws_dir) / "boards" / "amd" / "zynqmp_apu" / "zynqmp_apu.overlay"
+
+        # Run lopper commands
+        commands = [
+            f"{lopper_cmd} -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
+            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
+            f"{lopper_cmd} -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}"
+        ]
+
+        for cmd in commands:
+            runcmd(cmd, cwd=workspace)
+
+        if zephyr_board_dts:
+            self._copy_files([((os.path.join(workspace, "board.overlay")), workspace_overlay)])
+
     def _process_cortexr5(self, workspace: Path, ws_dir: str, sdt: Path,
                           proc: str, lops_dir: Optional[Path],
                           zephyr_board_dts: Optional[Path],
@@ -409,8 +433,13 @@ class LopperCommand(WestCommand):
         logger.info("Processing Cortex-R5 processor")
 
         lops_file = self._lop_path(lops_dir, "lop-r5-imux.dts")
-        workspace_dts = Path(ws_dir) / "boards" / "amd" / "versal_rpu" / "versal_rpu.dts"
-        workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versal_rpu" / "versal_rpu.overlay"
+
+        if "psu_cortexr5" in proc:
+            workspace_dts = Path(ws_dir) / "boards" / "amd" / "zynqmp_rpu" / "zynqmp_rpu.dts"
+            workspace_overlay = Path(ws_dir) / "boards" / "amd" / "zynqmp_rpu" / "zynqmp_rpu.overlay"
+        else:
+            workspace_dts = Path(ws_dir) / "boards" / "amd" / "versal_rpu" / "versal_rpu.dts"
+            workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versal_rpu" / "versal_rpu.overlay"
 
         # Run lopper commands
         commands = [
@@ -785,6 +814,11 @@ class LopperCommand(WestCommand):
                                         zephyr_board_dts, lopper_cmd)
                 shutil.rmtree(workspace)
                 logger.info("Cortex-A72 processing completed successfully")
+            elif "cortexa53" in proc_ip_name:
+                self._process_cortexa53(workspace, str(ws_dir), sdt, proc, lops_dir,
+                                        zephyr_board_dts, lopper_cmd)
+                shutil.rmtree(workspace)
+                logger.info("Cortex-A53 processing completed successfully")
             else:
                 logger.error(f"Unsupported processor type: {proc_ip_name}")
                 sys.exit(1)
