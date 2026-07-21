@@ -45,7 +45,6 @@
 			#dma-cells = <1>;
 			interrupts = <GIC_SPI 72 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
 			clock-names = "clk_main", "clk_apb";
-			xlnx,bus-width = <64>;
 		};
 
 		adma1: dma-controller@ebd10000 {
@@ -55,7 +54,6 @@
 			#dma-cells = <1>;
 			interrupts = <GIC_SPI 73 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
 			clock-names = "clk_main", "clk_apb";
-			xlnx,bus-width = <64>;
 		};
 
 		adma2: dma-controller@ebd20000 {
@@ -65,7 +63,6 @@
 			#dma-cells = <1>;
 			interrupts = <GIC_SPI 74 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
 			clock-names = "clk_main", "clk_apb";
-			xlnx,bus-width = <64>;
 		};
 
 		adma3: dma-controller@ebd30000 {
@@ -75,7 +72,6 @@
 			#dma-cells = <1>;
 			interrupts = <GIC_SPI 75 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
 			clock-names = "clk_main", "clk_apb";
-			xlnx,bus-width = <64>;
 		};
 
 		adma4: dma-controller@ebd40000 {
@@ -85,7 +81,6 @@
 			#dma-cells = <1>;
 			interrupts = <GIC_SPI 76 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
 			clock-names = "clk_main", "clk_apb";
-			xlnx,bus-width = <64>;
 		};
 
 		adma5: dma-controller@ebd50000 {
@@ -95,7 +90,6 @@
 			#dma-cells = <1>;
 			interrupts = <GIC_SPI 77 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
 			clock-names = "clk_main", "clk_apb";
-			xlnx,bus-width = <64>;
 		};
 
 		adma6: dma-controller@ebd60000 {
@@ -105,7 +99,6 @@
 			#dma-cells = <1>;
 			interrupts = <GIC_SPI 78 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
 			clock-names = "clk_main", "clk_apb";
-			xlnx,bus-width = <64>;
 		};
 
 		adma7: dma-controller@ebd70000 {
@@ -115,7 +108,6 @@
 			#dma-cells = <1>;
 			interrupts = <GIC_SPI 79 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
 			clock-names = "clk_main", "clk_apb";
-			xlnx,bus-width = <64>;
 		};
 	};
 };

@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union, Any
 import yaml
 
-import lopper
 from west.commands import WestCommand
 
 class ColoredFormatter(logging.Formatter):
@@ -246,6 +245,19 @@ class LopperCommand(WestCommand):
             default="./zephyr/",
             help="Zephyr repository root: directory that contains west.yml (default: ./zephyr/ relative to cwd)",
         )
+        parser.add_argument(
+            "--lopper-path",
+            default=None,
+            help=(
+                "Path to a lopper binary executable OR a lopper source directory. "
+                "Binary: used directly as the lopper command. "
+                "Source dir: pip-installed into the current venv, then used. "
+                "Also honoured via the LOPPER_PATH environment variable. "
+                "If omitted and 'lopper' is already in PATH (e.g. after sourcing "
+                "Vitis settings64.sh), it is used automatically. "
+                "Otherwise falls back to 'west update lopper && west lopper-install'."
+            ),
+        )
 
         return parser
 
@@ -264,7 +276,8 @@ class LopperCommand(WestCommand):
         logger.info(f"Workspace directory: {workspace}")
         return workspace
 
-    def _validate_processor(self, proc: str, workspace: Path, sdt: Path) -> str:
+    def _validate_processor(self, proc: str, workspace: Path, sdt: Path,
+                            lopper_cmd: str) -> str:
         """
         Validate the processor name against available processors in the SDT.
 
@@ -272,6 +285,7 @@ class LopperCommand(WestCommand):
             proc: Processor name to validate
             workspace: Workspace directory
             sdt: System device tree path
+            lopper_cmd: Resolved lopper command (binary path or 'lopper')
 
         Returns:
             Processor IP name
@@ -280,7 +294,7 @@ class LopperCommand(WestCommand):
             SystemExit: If processor is not valid
         """
         # Generate CPU list
-        runcmd(f"lopper --werror -f -O {workspace} -i lop-cpulist.dts {sdt}", cwd=workspace)
+        runcmd(f"{lopper_cmd} --werror -f -O {workspace} -i lop-cpulist.dts {sdt}", cwd=workspace)
 
         cpu_list_file = workspace / "cpulist.yaml"
         avail_cpu_data = fetch_yaml_data(cpu_list_file, "cpulist")
@@ -296,8 +310,9 @@ class LopperCommand(WestCommand):
         return avail_cpu_data[proc]
 
     def _process_microblaze_riscv(self, workspace: Path, ws_dir: str, sdt: Path,
-                                  proc: str, lops_dir: Path,
-                                  zephyr_board_dts: Optional[Path]) -> None:
+                                  proc: str, lops_dir: Optional[Path],
+                                  zephyr_board_dts: Optional[Path],
+                                  lopper_cmd: str) -> None:
         """Process MicroBlaze RISC-V processor."""
         logger.info("Processing MicroBlaze RISC-V processor")
 
@@ -305,24 +320,20 @@ class LopperCommand(WestCommand):
         paths = {
             'generated_dts': workspace / "mbv32.dts",
             'workspace_dts': Path(ws_dir) / "boards" / "amd" / "mbv32" / "mbv32.dts",
-            'workspace_kconfig_defconfig': Path(ws_dir) / "soc" / "xlnx" / "mbv32" / "Kconfig.defconfig",
-            'generated_kconfig_defconfig': workspace / "Kconfig.defconfig",
-            'workspace_kconfig_soc': Path(ws_dir) / "soc" / "xlnx" / "mbv32" / "Kconfig",
-            'generated_kconfig_soc': workspace / "Kconfig",
             'generated_board_dt': workspace / "board.overlay",
             'workspace_board_overlay': Path(ws_dir) / "boards" / "amd" / "mbv32" / "mbv32.overlay",
             'workspace_board_defconfig': Path(ws_dir) / "boards" / "amd" / "mbv32" / "Kconfig.defconfig",
             'generated_board_defconfig': workspace / "board_Kconfig.defconfig"
         }
 
-        lops_file = lops_dir / "lop-microblaze-riscv.dts"
-        lops_file_intc = lops_dir / "lop-mbv-zephyr-intc.dts"
+        lops_file = self._lop_path(lops_dir, "lop-microblaze-riscv.dts")
+        lops_file_intc = self._lop_path(lops_dir, "lop-mbv-zephyr-intc.dts")
 
         # Run lopper commands
         commands = [
-            f"lopper -f --enhanced -O {workspace} -i {lops_file} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
-            f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-zephyr.dts -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}",
-            f"lopper -f --enhanced -O {workspace} -i {lops_file_intc} {workspace}/system-zephyr.dts {workspace}/mbv32.dts"
+            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
+            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-zephyr.dts -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}",
+            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file_intc} {workspace}/system-zephyr.dts {workspace}/mbv32.dts"
         ]
 
         for cmd in commands:
@@ -331,8 +342,6 @@ class LopperCommand(WestCommand):
         # Copy generated files to workspace
         self._copy_files([
             (paths['generated_dts'], paths['workspace_dts']),
-            (paths['generated_kconfig_defconfig'], paths['workspace_kconfig_defconfig']),
-            (paths['generated_kconfig_soc'], paths['workspace_kconfig_soc']),
             (paths['generated_board_defconfig'], paths['workspace_board_defconfig'])
         ])
 
@@ -340,12 +349,13 @@ class LopperCommand(WestCommand):
             self._copy_files([(paths['generated_board_dt'], paths['workspace_board_overlay'])])
 
     def _process_cortexr52(self, workspace: Path, ws_dir: str, sdt: Path,
-                          proc: str, lops_dir: Path,
-                          zephyr_board_dts: Optional[Path]) -> None:
+                          proc: str, lops_dir: Optional[Path],
+                          zephyr_board_dts: Optional[Path],
+                          lopper_cmd: str) -> None:
         """Process Cortex-R52 processor."""
         logger.info("Processing Cortex-R52 processor")
 
-        lops_file = lops_dir / "lop-r52-imux.dts"
+        lops_file = self._lop_path(lops_dir, "lop-r52-imux.dts")
 
         if "psx_cortexr52" in proc:
             workspace_dts = Path(ws_dir) / "boards" / "amd" / "versalnet_rpu" / "versalnet_rpu.dts"
@@ -356,9 +366,9 @@ class LopperCommand(WestCommand):
 
         # Run lopper commands
         commands = [
-            f"lopper -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
-            f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
-            f"lopper -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}"
+            f"{lopper_cmd} -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
+            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
+            f"{lopper_cmd} -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}"
         ]
 
         for cmd in commands:
@@ -368,20 +378,45 @@ class LopperCommand(WestCommand):
             self._copy_files([((os.path.join(workspace, "board.overlay")), workspace_overlay)])
 
     def _process_cortexa72(self, workspace: Path, ws_dir: str, sdt: Path,
-                          proc: str, lops_dir: Path,
-                          zephyr_board_dts: Optional[Path]) -> None:
+                          proc: str, lops_dir: Optional[Path],
+                          zephyr_board_dts: Optional[Path],
+                          lopper_cmd: str) -> None:
         """Process Cortex-A72 processor."""
         logger.info("Processing Cortex-A72 processor")
 
-        lops_file = lops_dir / "lop-a72-imux.dts"
+        lops_file = self._lop_path(lops_dir, "lop-a72-imux.dts")
         workspace_dts = Path(ws_dir) / "boards" / "amd" / "versal_apu" / "versal_apu.dts"
         workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versal_apu" / "versal_apu.overlay"
 
         # Run lopper commands
         commands = [
-            f"lopper -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
-            f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
-            f"lopper -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}"
+            f"{lopper_cmd} -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
+            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
+            f"{lopper_cmd} -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}"
+        ]
+
+        for cmd in commands:
+            runcmd(cmd, cwd=workspace)
+
+        if zephyr_board_dts:
+            self._copy_files([((os.path.join(workspace, "board.overlay")), workspace_overlay)])
+
+    def _process_cortexa53(self, workspace: Path, ws_dir: str, sdt: Path,
+                          proc: str, lops_dir: Optional[Path],
+                          zephyr_board_dts: Optional[Path],
+                          lopper_cmd: str) -> None:
+        """Process Cortex-A53 processor."""
+        logger.info("Processing Cortex-A53 processor")
+
+        lops_file = self._lop_path(lops_dir, "lop-a53-imux.dts")
+        workspace_dts = Path(ws_dir) / "boards" / "amd" / "zynqmp_apu" / "zynqmp_apu.dts"
+        workspace_overlay = Path(ws_dir) / "boards" / "amd" / "zynqmp_apu" / "zynqmp_apu.overlay"
+
+        # Run lopper commands
+        commands = [
+            f"{lopper_cmd} -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
+            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
+            f"{lopper_cmd} -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}"
         ]
 
         for cmd in commands:
@@ -391,20 +426,26 @@ class LopperCommand(WestCommand):
             self._copy_files([((os.path.join(workspace, "board.overlay")), workspace_overlay)])
 
     def _process_cortexr5(self, workspace: Path, ws_dir: str, sdt: Path,
-                          proc: str, lops_dir: Path,
-                          zephyr_board_dts: Optional[Path]) -> None:
+                          proc: str, lops_dir: Optional[Path],
+                          zephyr_board_dts: Optional[Path],
+                          lopper_cmd: str) -> None:
         """Process Cortex-R5 processor."""
         logger.info("Processing Cortex-R5 processor")
 
-        lops_file = lops_dir / "lop-r5-imux.dts"
-        workspace_dts = Path(ws_dir) / "boards" / "amd" / "versal_rpu" / "versal_rpu.dts"
-        workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versal_rpu" / "versal_rpu.overlay"
+        lops_file = self._lop_path(lops_dir, "lop-r5-imux.dts")
+
+        if "psu_cortexr5" in proc:
+            workspace_dts = Path(ws_dir) / "boards" / "amd" / "zynqmp_rpu" / "zynqmp_rpu.dts"
+            workspace_overlay = Path(ws_dir) / "boards" / "amd" / "zynqmp_rpu" / "zynqmp_rpu.overlay"
+        else:
+            workspace_dts = Path(ws_dir) / "boards" / "amd" / "versal_rpu" / "versal_rpu.dts"
+            workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versal_rpu" / "versal_rpu.overlay"
 
         # Run lopper commands
         commands = [
-            f"lopper -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
-            f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
-            f"lopper -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}"
+            f"{lopper_cmd} -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
+            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
+            f"{lopper_cmd} -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}"
         ]
 
         for cmd in commands:
@@ -414,12 +455,13 @@ class LopperCommand(WestCommand):
             self._copy_files([((os.path.join(workspace, "board.overlay")), workspace_overlay)])
 
     def _process_cortexa78(self, workspace: Path, ws_dir: str, sdt: Path,
-                          proc: str, lops_dir: Path,
-                          zephyr_board_dts: Optional[Path]) -> None:
+                          proc: str, lops_dir: Optional[Path],
+                          zephyr_board_dts: Optional[Path],
+                          lopper_cmd: str) -> None:
         """Process Cortex-A78 processor."""
         logger.info("Processing Cortex-A78 processor")
 
-        lops_file = lops_dir / "lop-a78-imux.dts"
+        lops_file = self._lop_path(lops_dir, "lop-a78-imux.dts")
 
         if "psx_cortexa78" in proc:
             workspace_dts = Path(ws_dir) / "boards" / "amd" / "versalnet_apu" / "versalnet_apu.dts"
@@ -430,9 +472,9 @@ class LopperCommand(WestCommand):
 
         # Run lopper commands
         commands = [
-            f"lopper -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
-            f"lopper -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
-            f"lopper -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}"
+            f"{lopper_cmd} -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
+            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
+            f"{lopper_cmd} -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}"
         ]
 
         for cmd in commands:
@@ -457,6 +499,188 @@ class LopperCommand(WestCommand):
             except Exception as e:
                 logger.error(f"Failed to copy {src} to {dst}: {e}")
                 raise
+
+    def _is_vitis_binary(self, binary_path: Path) -> bool:
+        """
+        Heuristic: is this lopper binary part of a Vitis/Vivado install
+        (e.g. found after sourcing settings64.sh)?
+
+        A Vitis-packaged lopper is not laid out as a normal Python
+        site-packages install, and it already knows how to resolve its own
+        bundled lops/ directory (lopper's input_find() searches relative to
+        the lopper module that is actually executing). So for these
+        binaries we skip our own lops/ discovery entirely -- on Windows the
+        binary is a lopper.BAT wrapper with no shebang and no sibling
+        lib/site-packages tree, so discovery reliably fails there even
+        though the binary itself works fine.
+        """
+        parts = {p.lower() for p in binary_path.resolve().parts}
+        return "vitis" in parts or "vivado" in parts
+
+    def _lop_path(self, lops_dir: Optional[Path], filename: str) -> str:
+        """
+        Build the value to pass as a lopper -i argument for a bundled lop
+        file.
+
+        When lops_dir is known, pass the full path. When lops_dir is None
+        (Vitis-packaged binary, see _is_vitis_binary), pass the bare
+        filename instead -- lopper resolves it internally against its own
+        bundled lops/ directory.
+        """
+        return str(lops_dir / filename) if lops_dir is not None else filename
+
+    def _find_lops_via_subprocess(self, python: str) -> Optional[Path]:
+        """
+        Ask a specific Python interpreter where lopper installed its lops directory.
+        Returns None if the query fails or the directory does not exist.
+        """
+        try:
+            result = subprocess.run(
+                [python, "-c",
+                 "import lopper, os; print(os.path.dirname(os.path.abspath(lopper.__file__)))"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0:
+                lops_dir = Path(result.stdout.strip()) / "lops"
+                if lops_dir.is_dir():
+                    return lops_dir
+        except Exception:
+            pass
+        return None
+
+    def _find_lops_from_binary(self, binary_path: Path) -> Path:
+        """
+        Locate the lopper lops/ directory given a path to the lopper binary.
+
+        Strategy (tried in order):
+          1. Read the binary's shebang (#!) to get its Python interpreter, then
+             import lopper from that interpreter to find __file__.
+          2. Try the current process's sys.executable.
+          3. Glob site-packages relative to the binary's parent directory.
+        """
+        # Strategy 1: shebang Python
+        try:
+            with open(binary_path, "rb") as fh:
+                first = fh.readline().decode("utf-8", errors="replace").strip()
+            if first.startswith("#!"):
+                shebang_python = first[2:].split()[0]
+                lops = self._find_lops_via_subprocess(shebang_python)
+                if lops:
+                    return lops
+        except Exception:
+            pass
+
+        # Strategy 2: current Python
+        lops = self._find_lops_via_subprocess(sys.executable)
+        if lops:
+            return lops
+
+        # Strategy 3: glob site-packages next to the binary
+        bin_dir = binary_path.resolve().parent
+        for candidate in (bin_dir.parent / "lib").glob("python*/site-packages/lopper/lops"):
+            if candidate.is_dir():
+                return candidate
+
+        logger.error(
+            f"Cannot locate lopper lops/ directory from binary: {binary_path}. "
+            "Ensure lopper is installed in the active Python environment."
+        )
+        sys.exit(1)
+
+    def _find_lops_from_import(self) -> Path:
+        """Return lops/ dir from the currently-importable lopper Python package."""
+        try:
+            import importlib
+            lopper_mod = importlib.import_module("lopper")
+            lops_dir = Path(lopper_mod.__file__).parent / "lops"
+            if lops_dir.is_dir():
+                return lops_dir
+            logger.error(f"lopper lops/ directory not found at expected path: {lops_dir}")
+            sys.exit(1)
+        except ImportError:
+            logger.error(
+                "Cannot import lopper Python package. "
+                "Run 'west lopper-install' or use --lopper-path."
+            )
+            sys.exit(1)
+
+    def _resolve_lopper(self, lopper_path_arg: Optional[str], zephyr_dir: Path) -> tuple:
+        """
+        Determine the lopper command and lops/ directory to use.
+
+        Priority:
+          1. --lopper-path / LOPPER_PATH env var
+               - if it points to an *executable file*  → use it as the command
+               - if it points to a *directory* (source) → pip-install, then use 'lopper'
+          2. 'lopper' already found in PATH (e.g. after sourcing Vitis settings64.sh
+             or after a previous 'west lopper-install') → use it, skip west update
+          3. Fallback: west update lopper + west lopper-install, then use 'lopper'
+
+        Returns:
+            (lopper_cmd, lops_dir)
+        """
+        lopper_path = lopper_path_arg or os.getenv("LOPPER_PATH")
+
+        if lopper_path:
+            p = Path(lopper_path).resolve()
+            if p.is_file() and os.access(p, os.X_OK):
+                logger.info(f"Using lopper binary from --lopper-path / LOPPER_PATH: {p}")
+                if self._is_vitis_binary(p):
+                    logger.info(
+                        "Detected Vitis-packaged lopper binary; skipping lops/ "
+                        "directory discovery (the binary resolves its own bundled lops)"
+                    )
+                    return str(p), None
+                lops_dir = self._find_lops_from_binary(p)
+                return str(p), lops_dir
+            elif p.is_dir():
+                logger.info(f"Installing lopper from source directory: {p}")
+                runcmd(f"pip install '{p}/[dt,server,yaml,pcpp]'")
+                # Resolve the freshly-installed binary explicitly instead of the
+                # bare 'lopper' name: subprocess calls below run with shell=True,
+                # so an unqualified name is re-resolved against PATH and can pick
+                # up an unrelated lopper (e.g. from a sourced Vitis settings64.sh)
+                # ahead of the one we just installed into this venv.
+                venv_lopper = Path(sys.executable).parent / "lopper"
+                if venv_lopper.is_file() and os.access(venv_lopper, os.X_OK):
+                    lopper_bin = venv_lopper
+                else:
+                    resolved = shutil.which("lopper")
+                    if not resolved:
+                        logger.error(
+                            f"pip installed lopper from {p} but could not locate "
+                            "the resulting 'lopper' executable afterwards."
+                        )
+                        sys.exit(1)
+                    lopper_bin = Path(resolved)
+                logger.info(f"Using freshly installed lopper binary: {lopper_bin}")
+                lops_dir = self._find_lops_from_binary(lopper_bin)
+                return str(lopper_bin), lops_dir
+            else:
+                logger.error(
+                    f"--lopper-path / LOPPER_PATH is neither an executable file "
+                    f"nor a directory: {lopper_path}"
+                )
+                sys.exit(1)
+
+        # Check if lopper is already available in PATH
+        lopper_in_path = shutil.which("lopper")
+        if lopper_in_path:
+            logger.info(f"Found lopper in PATH: {lopper_in_path} (skipping west update)")
+            lopper_in_path_p = Path(lopper_in_path)
+            if self._is_vitis_binary(lopper_in_path_p):
+                logger.info(
+                    "Detected Vitis-packaged lopper binary; skipping lops/ "
+                    "directory discovery (the binary resolves its own bundled lops)"
+                )
+                return "lopper", None
+            lops_dir = self._find_lops_from_binary(lopper_in_path_p)
+            return "lopper", lops_dir
+
+        # Fallback: west update + install
+        self._ensure_lopper_up_to_date(zephyr_dir)
+        lops_dir = self._find_lops_from_import()
+        return "lopper", lops_dir
 
     def _get_lopper_expected_rev(self, zephyr_dir: Path) -> Optional[str]:
         """Read the lopper revision from west.yml."""
@@ -528,9 +752,14 @@ class LopperCommand(WestCommand):
         try:
             logger.info("Starting lopper command execution")
 
-            # Ensure lopper is at the revision specified in west.yml
             zephyr_dir = Path(args.ws_dir).resolve()
-            self._ensure_lopper_up_to_date(zephyr_dir)
+
+            # Resolve which lopper binary and lops/ directory to use
+            lopper_cmd, lops_dir = self._resolve_lopper(
+                getattr(args, "lopper_path", None), zephyr_dir
+            )
+            logger.info(f"lopper command: {lopper_cmd}")
+            logger.info(f"lops directory: {lops_dir if lops_dir is not None else '<bundled with binary>'}")
 
             # Validate and prepare paths
             sdt = Path(args.sdt).resolve()
@@ -554,43 +783,42 @@ class LopperCommand(WestCommand):
             else:
                 logger.warning("board dts not specified, proceeding without board overlay")
 
-            # Get lopper operations directory
-            lops_dir = Path(lopper.__file__).parent / "lops"
-            if not lops_dir.exists():
-                logger.error(f"Lopper operations directory not found: {lops_dir}")
-                sys.exit(1)
-
             # Validate processor and get IP name
             logger.info(f"Validating processor: {proc}")
-            proc_ip_name = self._validate_processor(proc, workspace, sdt)
+            proc_ip_name = self._validate_processor(proc, workspace, sdt, lopper_cmd)
             logger.info(f"Processor IP name identified: {proc_ip_name}")
 
             # Process based on processor type
             if "microblaze_riscv" in proc_ip_name:
-                self._process_microblaze_riscv(workspace, str(ws_dir), sdt, proc, lops_dir, zephyr_board_dts)
-                # Clean up workspace after successful processing
+                self._process_microblaze_riscv(workspace, str(ws_dir), sdt, proc, lops_dir,
+                                               zephyr_board_dts, lopper_cmd)
                 shutil.rmtree(workspace)
                 logger.info("MicroBlaze RISC-V processing completed successfully")
             elif "cortexr52" in proc_ip_name:
-                self._process_cortexr52(workspace, str(ws_dir), sdt, proc, lops_dir, zephyr_board_dts)
-                # Clean up workspace after successful processing
+                self._process_cortexr52(workspace, str(ws_dir), sdt, proc, lops_dir,
+                                        zephyr_board_dts, lopper_cmd)
                 shutil.rmtree(workspace)
                 logger.info("Cortex-R52 processing completed successfully")
             elif "cortexr5" in proc_ip_name:
-                self._process_cortexr5(workspace, str(ws_dir), sdt, proc, lops_dir, zephyr_board_dts)
-                # Clean up workspace after successful processing
+                self._process_cortexr5(workspace, str(ws_dir), sdt, proc, lops_dir,
+                                       zephyr_board_dts, lopper_cmd)
                 shutil.rmtree(workspace)
                 logger.info("Cortex-R5 processing completed successfully")
             elif "cortexa78" in proc_ip_name:
-                self._process_cortexa78(workspace, str(ws_dir), sdt, proc, lops_dir, zephyr_board_dts)
-                # Clean up workspace after successful processing
+                self._process_cortexa78(workspace, str(ws_dir), sdt, proc, lops_dir,
+                                        zephyr_board_dts, lopper_cmd)
                 shutil.rmtree(workspace)
                 logger.info("Cortex-A78 processing completed successfully")
             elif "cortexa72" in proc_ip_name:
-                self._process_cortexa72(workspace, str(ws_dir), sdt, proc, lops_dir, zephyr_board_dts)
-                # Clean up workspace after successful processing
+                self._process_cortexa72(workspace, str(ws_dir), sdt, proc, lops_dir,
+                                        zephyr_board_dts, lopper_cmd)
                 shutil.rmtree(workspace)
                 logger.info("Cortex-A72 processing completed successfully")
+            elif "cortexa53" in proc_ip_name:
+                self._process_cortexa53(workspace, str(ws_dir), sdt, proc, lops_dir,
+                                        zephyr_board_dts, lopper_cmd)
+                shutil.rmtree(workspace)
+                logger.info("Cortex-A53 processing completed successfully")
             else:
                 logger.error(f"Unsupported processor type: {proc_ip_name}")
                 sys.exit(1)

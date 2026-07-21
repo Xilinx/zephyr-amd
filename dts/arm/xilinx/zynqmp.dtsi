@@ -29,7 +29,7 @@
 
 		uart0: uart@ff000000 {
 			compatible = "xlnx,xuartps";
-			reg = <0xff000000 0x4c>;
+			reg = <0xff000000 0x1000>;
 			status = "disabled";
 			interrupts = <GIC_SPI 21 IRQ_TYPE_LEVEL
 				      IRQ_DEFAULT_PRIORITY>;
@@ -38,7 +38,7 @@
 
 		uart1: uart@ff010000 {
 			compatible = "xlnx,xuartps";
-			reg = <0xff010000 0x4c>;
+			reg = <0xff010000 0x1000>;
 			status = "disabled";
 			interrupts = <GIC_SPI 22 IRQ_TYPE_LEVEL
 				      IRQ_DEFAULT_PRIORITY>;
@@ -95,16 +95,6 @@
 				      IRQ_DEFAULT_PRIORITY>;
 			interrupt-names = "irq_0", "irq_1", "irq_2";
 			reg = <0xff140000 0x1000>;
-		};
-
-		rtc0: rtc@ffa60000 {
-			compatible = "xlnx,zynqmp-rtc";
-			status = "disabled";
-			reg = <0xffa60000 0x100>;
-			interrupts = <GIC_SPI 26 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>,
-				     <GIC_SPI 27 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
-			interrupt-names = "alarm", "sec";
-			alarms-count = <1>;
 		};
 
 		gem0: ethernet@ff0b0000 {
@@ -369,6 +359,18 @@
 					IRQ_DEFAULT_PRIORITY>;
 			#address-cells = <1>;
 			#size-cells = <0>;
+		};
+
+		rtc: rtc@ffa60000 {
+			compatible = "xlnx,zynqmp-rtc";
+			reg = <0xffa60000 0x100>;
+			status = "disabled";
+			interrupts = <GIC_SPI 26 IRQ_TYPE_LEVEL
+				      IRQ_DEFAULT_PRIORITY>,
+				     <GIC_SPI 27 IRQ_TYPE_LEVEL
+				      IRQ_DEFAULT_PRIORITY>;
+			interrupt-names = "alarm", "sec";
+			clock-frequency = <32768>;
 		};
 	};
 };

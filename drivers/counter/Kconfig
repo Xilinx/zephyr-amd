@@ -22,6 +22,13 @@ config COUNTER_SHELL
 	help
 	  Enable Shell Commands for Counter and Timer
 
+config COUNTER_CALIBRATION
+	bool "Counter driver calibration support"
+	help
+	  Enable support for counter clock calibration. Calibration
+	  is specified in parts per billion (ppb). A positive value
+	  speeds up the counter, a negative value slows it down.
+
 module = COUNTER
 module-str = counter
 source "subsys/logging/Kconfig.template.log_config"
@@ -134,4 +141,5 @@ source "drivers/counter/Kconfig.mspm0"
 
 source "drivers/counter/Kconfig.xlnx_ttc"
 
+source "drivers/counter/Kconfig.xlnx_zynqmp_rtc"
 endif # COUNTER

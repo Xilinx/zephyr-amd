@@ -25,8 +25,8 @@ static struct dma_block_config sg_blocks[CONFIG_DMA_TRANSFER_CHANNEL][NUM_SG_BLO
 #define TOTAL_BUFFER_SIZE	BUFFER_SIZE
 #endif
 
-static uint8_t src_buffer[CONFIG_DMA_TRANSFER_CHANNEL][TOTAL_BUFFER_SIZE] __aligned(64);
-static uint8_t dst_buffer[CONFIG_DMA_TRANSFER_CHANNEL][TOTAL_BUFFER_SIZE] __aligned(64);
+static uint8_t src_buffer[CONFIG_DMA_TRANSFER_CHANNEL][TOTAL_BUFFER_SIZE] __aligned(64) __nocache;
+static uint8_t dst_buffer[CONFIG_DMA_TRANSFER_CHANNEL][TOTAL_BUFFER_SIZE] __aligned(64) __nocache;
 
 static void dma_callback(const struct device *dev, void *user_data, uint32_t channel, int status)
 {
