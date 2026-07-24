@@ -109,5 +109,15 @@
 			interrupts = <GIC_SPI 79 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
 			clock-names = "clk_main", "clk_apb";
 		};
+
+		rtc: rtc@f12a0000 {
+			compatible = "xlnx,zynqmp-rtc";
+			reg = <0x0 0xf12a0000 0x0 0x100>;
+			interrupts = <GIC_SPI 200 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>,
+				     <GIC_SPI 201 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+			interrupt-names = "alarm", "sec";
+			clock-frequency = <32768>;
+			status = "disabled";
+		};
 	};
 };

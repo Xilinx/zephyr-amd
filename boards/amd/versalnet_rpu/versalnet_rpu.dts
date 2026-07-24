@@ -226,3 +226,7 @@
 	timer-id = <2>;
 	clock-frequency = <149998505>;
 };
+
+&rtc {
+	status = "okay";
+};
