@@ -5,6 +5,8 @@ simulation:
   - name: qemu
 toolchain:
   - zephyr
+supported:
+  - rtc
 testing:
   timeout_multiplier: 6
   ignore_tags:

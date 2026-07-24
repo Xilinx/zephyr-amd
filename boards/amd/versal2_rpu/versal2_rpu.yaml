@@ -12,6 +12,7 @@ supported:
   - sdhc
   - watchdog
   - dma
+  - rtc
 testing:
   timeout_multiplier: 6
   ignore_tags:
