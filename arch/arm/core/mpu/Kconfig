@@ -79,6 +79,15 @@ config ARM_MPU_PXN
 	  unprivileged mode and executing such region from privileged mode will
 	  result in a Memory Management fault.
 
+config ARM_MPU_SKIP_ARCH_INIT
+	bool "Skip MPU initialization"
+	help
+	  Select when early boot code (for example a TCM-resident stub) has
+	  already enabled and configured the MPU before the kernel runs.
+	  z_arm_mpu_init() skips reprogramming because disabling the MPU
+	  while executing from a region that is only reachable with the MPU
+	  enabled causes a fault.
+
 endif # ARM_MPU
 
 endif # CPU_HAS_MPU
