@@ -237,8 +237,8 @@ class LopperCommand(WestCommand):
         )
 
         parser.add_argument(
-            "-b", "--board_dts",
-            help="optional path to a board .dts file used as the Zephyr board source for overlay generation",
+            "-o", "--board_overlay",
+            help="optional path to a board .dts file used as the Zephyr board overlay source for Lopper",
         )
         parser.add_argument(
             "-w", "--ws_dir",
@@ -773,15 +773,15 @@ class LopperCommand(WestCommand):
             # Set up workspace
             workspace = self._setup_workspace(str(ws_dir))
 
-            # Find board overlay if board is specified
+            # Find board overlay if -o is specified
             zephyr_board_dts = None
-            if args.board_dts:
-                zephyr_board_dts = Path(args.board_dts).resolve()
-                if not zephyr_board_dts.exists():
-                    logger.error(f" board dts file not found: {zephyr_board_dts}")
+            if args.board_overlay:
+                zephyr_board_dts = Path(args.board_overlay).resolve()
+                if not zephyr_board_dts.is_file():
+                    logger.error(f"Board overlay file not found: {zephyr_board_dts}")
                     sys.exit(1)
             else:
-                logger.warning("board dts not specified, proceeding without board overlay")
+                logger.warning("Board overlay not specified (-o), proceeding without overlay")
 
             # Validate processor and get IP name
             logger.info(f"Validating processor: {proc}")
