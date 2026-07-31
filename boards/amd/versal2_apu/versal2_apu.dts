@@ -85,3 +85,7 @@
 	status = "okay";
 	clocks = <&adma_ref_clk>, <&adma_ref_clk>;
 };
+
+&rtc {
+	status = "okay";
+};

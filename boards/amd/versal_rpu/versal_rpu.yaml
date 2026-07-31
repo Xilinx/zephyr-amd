@@ -12,6 +12,7 @@ ram: 65536
 flash: 32768
 supported:
   - gpio
+  - rtc
 testing:
   timeout_multiplier: 10
   ignore_tags:

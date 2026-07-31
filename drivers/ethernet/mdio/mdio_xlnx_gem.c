@@ -6,8 +6,9 @@
  */
 
 #include <zephyr/device.h>
-#include <zephyr/kernel.h>
 #include <zephyr/drivers/mdio.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/util.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(xlnx_gem_mdio, CONFIG_MDIO_LOG_LEVEL);
@@ -88,6 +89,18 @@ struct xlnx_gem_mdio_config {
 	uint32_t gem_base_addr;
 };
 
+static inline bool xlnx_gem_mdio_is_idle(const struct xlnx_gem_mdio_config *dev_conf)
+{
+	return (sys_read32(dev_conf->gem_base_addr + ETH_XLNX_GEM_NWSR_OFFSET) &
+		ETH_XLNX_GEM_NWSR_MDIO_IDLE_BIT) != 0;
+}
+
+static bool xlnx_gem_mdio_poll_idle(const struct xlnx_gem_mdio_config *dev_conf)
+{
+	return WAIT_FOR(xlnx_gem_mdio_is_idle(dev_conf), CONFIG_MDIO_XLNX_GEM_IDLE_TIMEOUT_US,
+			k_busy_wait(1));
+}
+
 /**
  * @brief GEM MDIO interface data read function
  *
@@ -102,28 +115,15 @@ static int xlnx_gem_mdio_read(const struct device *dev, uint8_t prtad, uint8_t r
 			      uint16_t *data)
 {
 	const struct xlnx_gem_mdio_config *const dev_conf = dev->config;
-
 	uint32_t reg_val;
-	uint32_t poll_cnt = 0;
 
 	/*
 	 * MDIO read operation as described in Zynq-7000 TRM,
 	 * chapter 16.3.4, p. 517.
 	 */
 
-	/*
-	 * Wait until gem.net_status[phy_mgmt_idle] == 1 before issuing the
-	 * current command.
-	 */
-	do {
-		if (poll_cnt++ > 0) {
-			k_busy_wait(CONFIG_MDIO_XLNX_GEM_POLL_DELAY);
-		}
-		reg_val = sys_read32(dev_conf->gem_base_addr + ETH_XLNX_GEM_NWSR_OFFSET);
-	} while ((reg_val & ETH_XLNX_GEM_NWSR_MDIO_IDLE_BIT) == 0 &&
-		 poll_cnt < CONFIG_MDIO_XLNX_GEM_MAX_POLL_RETRIES);
-	if (poll_cnt == CONFIG_MDIO_XLNX_GEM_MAX_POLL_RETRIES) {
-		LOG_ERR("%s: read from PHY address %hhu, register address %hhu timed out",
+	if (!xlnx_gem_mdio_poll_idle(dev_conf)) {
+		LOG_ERR("%s: MDIO bus idle timeout before read (PHY %hhu, reg %hhu)",
 			dev->name, prtad, regad);
 		return -ETIMEDOUT;
 	}
@@ -143,20 +143,8 @@ static int xlnx_gem_mdio_read(const struct device *dev, uint8_t prtad, uint8_t r
 
 	sys_write32(reg_val, dev_conf->gem_base_addr + ETH_XLNX_GEM_PHY_MAINTENANCE_OFFSET);
 
-	/*
-	 * Wait until gem.net_status[phy_mgmt_idle] == 1 -> current command
-	 * completed.
-	 */
-	poll_cnt = 0;
-	do {
-		if (poll_cnt++ > 0) {
-			k_busy_wait(CONFIG_MDIO_XLNX_GEM_POLL_DELAY);
-		}
-		reg_val = sys_read32(dev_conf->gem_base_addr + ETH_XLNX_GEM_NWSR_OFFSET);
-	} while ((reg_val & ETH_XLNX_GEM_NWSR_MDIO_IDLE_BIT) == 0 &&
-		 poll_cnt < CONFIG_MDIO_XLNX_GEM_MAX_POLL_RETRIES);
-	if (poll_cnt == CONFIG_MDIO_XLNX_GEM_MAX_POLL_RETRIES) {
-		LOG_ERR("%s: read from PHY address %hhu, register address %hhu timed out",
+	if (!xlnx_gem_mdio_poll_idle(dev_conf)) {
+		LOG_ERR("%s: MDIO bus idle timeout after read (PHY %hhu, reg %hhu)",
 			dev->name, prtad, regad);
 		return -ETIMEDOUT;
 	}
@@ -178,44 +166,31 @@ static int xlnx_gem_mdio_read(const struct device *dev, uint8_t prtad, uint8_t r
  * @param prtad MDIO address of the PHY to be accessed
  * @param regad Index of the PHY register to write to
  * @param data  Data word to be written to the target register
- * @return      0 in case of success, -ETIMEDOUT if the read operation
+ * @return      0 in case of success, -ETIMEDOUT if the write operation
  *              timed out (idle bit not set as expected)
  */
 static int xlnx_gem_mdio_write(const struct device *dev, uint8_t prtad, uint8_t regad,
 			       uint16_t data)
 {
 	const struct xlnx_gem_mdio_config *const dev_conf = dev->config;
-
 	uint32_t reg_val;
-	uint32_t poll_cnt = 0;
 
 	/*
 	 * MDIO write operation as described in Zynq-7000 TRM,
 	 * chapter 16.3.4, p. 517.
 	 */
 
-	/*
-	 * Wait until gem.net_status[phy_mgmt_idle] == 1 before issuing the
-	 * current command.
-	 */
-	do {
-		if (poll_cnt++ > 0) {
-			k_busy_wait(CONFIG_MDIO_XLNX_GEM_POLL_DELAY);
-		}
-		reg_val = sys_read32(dev_conf->gem_base_addr + ETH_XLNX_GEM_NWSR_OFFSET);
-	} while ((reg_val & ETH_XLNX_GEM_NWSR_MDIO_IDLE_BIT) == 0 &&
-		 poll_cnt < CONFIG_MDIO_XLNX_GEM_MAX_POLL_RETRIES);
-	if (poll_cnt == CONFIG_MDIO_XLNX_GEM_MAX_POLL_RETRIES) {
-		LOG_ERR("%s: write to PHY address %hhu, register address %hhu timed out", dev->name,
-			prtad, regad);
+	if (!xlnx_gem_mdio_poll_idle(dev_conf)) {
+		LOG_ERR("%s: MDIO bus idle timeout before write (PHY %hhu, reg %hhu)",
+			dev->name, prtad, regad);
 		return -ETIMEDOUT;
 	}
 
-	/* Assemble & write the read command to the gem.phy_maint register */
+	/* Assemble & write the write command to the gem.phy_maint register */
 
 	/* Set the bits constant for any operation */
 	reg_val = ETH_XLNX_GEM_PHY_MAINT_CONST_BITS;
-	/* Indicate a read operation */
+	/* Indicate a write operation */
 	reg_val |= ETH_XLNX_GEM_PHY_MAINT_WRITE_OP_BIT;
 	/* PHY address */
 	reg_val |= (((uint32_t)prtad & ETH_XLNX_GEM_PHY_MAINT_PHY_ADDRESS_MASK)
@@ -228,21 +203,9 @@ static int xlnx_gem_mdio_write(const struct device *dev, uint8_t prtad, uint8_t 
 
 	sys_write32(reg_val, dev_conf->gem_base_addr + ETH_XLNX_GEM_PHY_MAINTENANCE_OFFSET);
 
-	/*
-	 * Wait until gem.net_status[phy_mgmt_idle] == 1 -> current command
-	 * completed.
-	 */
-	poll_cnt = 0;
-	do {
-		if (poll_cnt++ > 0) {
-			k_busy_wait(CONFIG_MDIO_XLNX_GEM_POLL_DELAY);
-		}
-		reg_val = sys_read32(dev_conf->gem_base_addr + ETH_XLNX_GEM_NWSR_OFFSET);
-	} while ((reg_val & ETH_XLNX_GEM_NWSR_MDIO_IDLE_BIT) == 0 &&
-		 poll_cnt < CONFIG_MDIO_XLNX_GEM_MAX_POLL_RETRIES);
-	if (poll_cnt == CONFIG_MDIO_XLNX_GEM_MAX_POLL_RETRIES) {
-		LOG_ERR("%s: write to PHY address %hhu, register address %hhu timed out", dev->name,
-			prtad, regad);
+	if (!xlnx_gem_mdio_poll_idle(dev_conf)) {
+		LOG_ERR("%s: MDIO bus idle timeout after write (PHY %hhu, reg %hhu)",
+			dev->name, prtad, regad);
 		return -ETIMEDOUT;
 	}
 
@@ -300,3 +263,4 @@ static DEVICE_API(mdio, xlnx_gem_mdio_api) = {
 	XLNX_GEM_MDIO_DEV_INIT(port);
 
 DT_INST_FOREACH_STATUS_OKAY(XLNX_GEM_MDIO_INITIALIZE)
+

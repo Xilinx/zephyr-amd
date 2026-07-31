@@ -165,3 +165,7 @@
 	clock-frequency = <147915192>;
 	prescaler = <0>;
 };
+
+&rtc {
+	status = "okay";
+};

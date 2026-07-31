@@ -39,3 +39,7 @@
 	current-speed = <115200>;
 	clock-frequency = <100000000>;
 };
+
+&rtc {
+	status = "okay";
+};
