@@ -10,15 +10,41 @@ Zephyr board DTS / Kconfig under a Zephyr tree.
 import argparse
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
 import textwrap
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Any
+from typing import Callable, Dict, List, Optional, Tuple, Union, Any
 import yaml
 
 from west.commands import WestCommand
+
+# Single dispatch table: field, needle, handler method, default board folder.
+# First match wins; more specific proc-domain rules must precede generic proc_ip rules.
+_PROCESSOR_RULES: Tuple[Tuple[str, str, str, str], ...] = (
+    ("proc_ip", "microblaze_riscv", "_process_microblaze_riscv", "mbv32"),
+    ("proc", "psx_cortexr52", "_process_cortexr52", "versalnet_rpu"),
+    ("proc_ip", "cortexr52", "_process_cortexr52", "versal2_rpu"),
+    ("proc", "psu_cortexr5", "_process_cortexr5", "zynqmp_rpu"),
+    ("proc", "psv_cortexr5", "_process_cortexr5", "versal_rpu"),
+    ("proc", "psx_cortexa78", "_process_cortexa78", "versalnet_apu"),
+    ("proc_ip", "cortexa78", "_process_cortexa78", "versal2_apu"),
+    ("proc", "psu_cortexa53", "_process_cortexa53", "zynqmp_apu"),
+    ("proc", "psv_cortexa72", "_process_cortexa72", "versal_apu"),
+)
+
+
+def resolve_processor_rule(
+    proc_ip_name: str, proc: str,
+) -> Optional[Tuple[str, str]]:
+    """Return (handler_method_name, default_board) for *proc_ip_name* and *proc*."""
+    for field, needle, handler_name, board in _PROCESSOR_RULES:
+        haystack = proc if field == "proc" else proc_ip_name
+        if needle in haystack:
+            return handler_name, board
+    return None
 
 class ColoredFormatter(logging.Formatter):
     """
@@ -221,6 +247,11 @@ class LopperCommand(WestCommand):
               Already cd'd into the zephyr repository:
 
                 west lopper-command -w . -p <processor> -s /path/to/system-top.dts
+
+              Generate into a new board folder while keeping the default board unchanged:
+
+                west lopper-command -w . -p microblaze_riscv_0 -s /path/to/system-top.dts \\
+                    -o /path/to/kcu105.dts -b kc705_mbv32
             ''').strip(),
         )
 
@@ -237,8 +268,17 @@ class LopperCommand(WestCommand):
         )
 
         parser.add_argument(
-            "-b", "--board_dts",
-            help="optional path to a board .dts file used as the Zephyr board source for overlay generation",
+            "-b", "--board",
+            help=(
+                "output board name under boards/amd/: back up the processor "
+                "default board folder, run Lopper into that default, copy "
+                "generated artifacts into boards/amd/<name>/, then restore "
+                "the default folder"
+            ),
+        )
+        parser.add_argument(
+            "-o", "--board_overlay",
+            help="optional path to a board .dts file used as the Zephyr board overlay source for Lopper",
         )
         parser.add_argument(
             "-w", "--ws_dir",
@@ -308,6 +348,206 @@ class LopperCommand(WestCommand):
             sys.exit(1)
 
         return avail_cpu_data[proc]
+
+    def _resolve_processor(self, proc_ip_name: str, proc: str) -> Tuple[Callable[..., None], str]:
+        """Return the handler callable and default board folder for *proc*."""
+        resolved = resolve_processor_rule(proc_ip_name, proc)
+        if resolved is None:
+            logger.error(
+                "Unsupported processor type: %r (ip=%r)",
+                proc,
+                proc_ip_name,
+            )
+            sys.exit(1)
+        handler_name, board = resolved
+        return getattr(self, handler_name), board
+
+    def _default_board_name(self, proc_ip_name: str, proc: str) -> str:
+        """In-tree default board folder targeted by the processor handlers."""
+        return self._resolve_processor(proc_ip_name, proc)[1]
+
+    def _board_tree_paths(self, ws_dir: Union[str, Path], board: str) -> Dict[str, Path]:
+        """Paths under boards/amd/<board>/ used when publishing a custom board."""
+        base = Path(ws_dir).resolve() / "boards" / "amd" / board
+        return {
+            "dir": base,
+            "dts": base / f"{board}.dts",
+            "overlay": base / f"{board}.overlay",
+            "kconfig_defconfig": base / "Kconfig.defconfig",
+        }
+
+    def _run_with_named_board(
+        self,
+        ws_dir: Union[str, Path],
+        workspace: Path,
+        default_board: str,
+        board_name: str,
+        run_lopper: Callable[[], None],
+    ) -> None:
+        """Back up default board, run Lopper, publish to <board_name>, restore default."""
+        default_dir = self._board_tree_paths(ws_dir, default_board)["dir"]
+        backup_dir = workspace / "backup" / default_board
+
+        if not default_dir.is_dir():
+            logger.error(f"Default board directory not found: {default_dir}")
+            sys.exit(1)
+
+        if backup_dir.exists():
+            shutil.rmtree(backup_dir)
+
+        logger.info("Backing up default board folder: %s", default_dir)
+        shutil.copytree(default_dir, backup_dir)
+
+        try:
+            run_lopper()
+            self._publish_named_board(
+                ws_dir, workspace, backup_dir, default_board, board_name
+            )
+        finally:
+            logger.info("Restoring default board folder: %s", default_board)
+            shutil.rmtree(default_dir)
+            shutil.copytree(backup_dir, default_dir)
+            shutil.rmtree(backup_dir, ignore_errors=True)
+
+    def _patch_board_yml(self, board_yml: Path, board_name: str) -> None:
+        """Set board name only; keep SoC/variant entries from the default scaffold."""
+        if not board_yml.is_file():
+            raise FileNotFoundError(f"board.yml missing in scaffold: {board_yml}")
+        data = yaml.safe_load(board_yml.read_text(encoding='utf-8'))
+        if not isinstance(data, dict):
+            raise ValueError(f"Unexpected board.yml format: {board_yml}")
+        if 'boards' in data:
+            for entry in data.get('boards', []):
+                entry['name'] = board_name
+        elif 'board' in data:
+            data['board']['name'] = board_name
+        board_yml.write_text(
+            yaml.dump(data, default_flow_style=False, sort_keys=False),
+            encoding='utf-8',
+        )
+
+    def _adapt_board_scaffold(
+        self,
+        board_dir: Path,
+        default_board: str,
+        board_name: str,
+    ) -> None:
+        """Rename scaffold files and patch board Kconfig symbols for *board_name*."""
+        for path in sorted(board_dir.rglob('*'), key=lambda p: len(p.parts), reverse=True):
+            if not path.is_file() or default_board not in path.name:
+                continue
+            new_path = path.with_name(path.name.replace(default_board, board_name))
+            if new_path != path:
+                path.rename(new_path)
+
+        board_yml = board_dir / "board.yml"
+        self._patch_board_yml(board_yml, board_name)
+
+        board_sym = self._board_kconfig_symbol(board_name)
+        default_sym = self._board_kconfig_symbol(default_board)
+        for path in board_dir.glob("Kconfig.*"):
+            text = path.read_text(encoding='utf-8')
+            updated = text.replace(default_sym, board_sym)
+            if updated != text:
+                path.write_text(updated, encoding='utf-8')
+
+        for path in board_dir.glob("*.yaml"):
+            lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
+            changed = False
+            for idx, line in enumerate(lines):
+                if not line.startswith('identifier:'):
+                    continue
+                ident = line.split(':', 1)[1].strip()
+                if default_board in ident:
+                    ident = ident.replace(default_board, board_name, 1)
+                else:
+                    ident = board_name
+                lines[idx] = f"identifier: {ident}\n"
+                changed = True
+            if changed:
+                path.write_text(''.join(lines), encoding='utf-8')
+
+    def _board_kconfig_symbol(self, board: str) -> str:
+        """Zephyr Kconfig board guard (e.g. my-board -> BOARD_MY_BOARD)."""
+        return "BOARD_" + re.sub(r"[^a-zA-Z0-9_]", "_", board).upper()
+
+    def _publish_named_board(
+        self,
+        ws_dir: Union[str, Path],
+        workspace: Path,
+        backup_dir: Path,
+        default_board: str,
+        board_name: str,
+    ) -> None:
+        """Create boards/amd/<board_name>/ from default scaffold + Lopper output."""
+        default_paths = self._board_tree_paths(ws_dir, default_board)
+        out_paths = self._board_tree_paths(ws_dir, board_name)
+        output_dir = out_paths["dir"]
+
+        if output_dir.exists():
+            logger.info("Removing existing output board folder: %s", output_dir)
+            shutil.rmtree(output_dir)
+
+        try:
+            logger.info("Creating output board folder: %s", output_dir)
+            shutil.copytree(
+                backup_dir,
+                output_dir,
+                ignore=shutil.ignore_patterns("doc", "*-qemu.dts"),
+            )
+            self._adapt_board_scaffold(output_dir, default_board, board_name)
+
+            generated_pairs = [(default_paths["dts"], out_paths["dts"])]
+            if default_paths["overlay"].is_file():
+                generated_pairs.append((default_paths["overlay"], out_paths["overlay"]))
+
+            defconfig_src = default_paths["kconfig_defconfig"]
+            if not defconfig_src.is_file():
+                workspace_defconfig = workspace / "board_Kconfig.defconfig"
+                if workspace_defconfig.is_file():
+                    defconfig_src = workspace_defconfig
+            if defconfig_src.is_file():
+                generated_pairs.append((defconfig_src, out_paths["kconfig_defconfig"]))
+
+            for src, dst in generated_pairs:
+                if not src.is_file():
+                    logger.warning("Lopper artifact missing, skipping: %s", src)
+                    continue
+                self._copy_files([(src, dst)])
+
+            defconfig = out_paths["kconfig_defconfig"]
+            if defconfig.is_file():
+                text = defconfig.read_text(encoding='utf-8')
+                default_sym = self._board_kconfig_symbol(default_board)
+                board_sym = self._board_kconfig_symbol(board_name)
+                if default_sym != board_sym:
+                    defconfig.write_text(
+                        text.replace(default_sym, board_sym), encoding='utf-8',
+                    )
+
+            logger.info("Published Lopper output to %s", output_dir)
+        except Exception:
+            if output_dir.exists():
+                logger.info("Removing partial output board folder: %s", output_dir)
+                shutil.rmtree(output_dir, ignore_errors=True)
+            raise
+
+    def _run_processor(
+        self,
+        proc_ip_name: str,
+        workspace: Path,
+        ws_dir: Path,
+        sdt: Path,
+        proc: str,
+        lops_dir: Optional[Path],
+        zephyr_board_dts: Optional[Path],
+        lopper_cmd: str,
+    ) -> None:
+        """Dispatch to the processor handler from _PROCESSOR_RULES."""
+        handler, _ = self._resolve_processor(proc_ip_name, proc)
+        ws = str(ws_dir)
+        handler(workspace, ws, sdt, proc, lops_dir, zephyr_board_dts, lopper_cmd)
+        logger.info("%s processing completed successfully", proc)
 
     def _process_microblaze_riscv(self, workspace: Path, ws_dir: str, sdt: Path,
                                   proc: str, lops_dir: Optional[Path],
@@ -769,60 +1009,52 @@ class LopperCommand(WestCommand):
 
             proc = args.proc
             ws_dir = Path(args.ws_dir).resolve()
+            board_name = args.board
 
-            # Set up workspace
             workspace = self._setup_workspace(str(ws_dir))
 
-            # Find board overlay if board is specified
             zephyr_board_dts = None
-            if args.board_dts:
-                zephyr_board_dts = Path(args.board_dts).resolve()
-                if not zephyr_board_dts.exists():
-                    logger.error(f" board dts file not found: {zephyr_board_dts}")
+            if args.board_overlay:
+                zephyr_board_dts = Path(args.board_overlay).resolve()
+                if not zephyr_board_dts.is_file():
+                    logger.error(f"Board overlay file not found: {zephyr_board_dts}")
                     sys.exit(1)
             else:
-                logger.warning("board dts not specified, proceeding without board overlay")
+                logger.warning("Board overlay not specified (-o), proceeding without overlay")
 
-            # Validate processor and get IP name
             logger.info(f"Validating processor: {proc}")
             proc_ip_name = self._validate_processor(proc, workspace, sdt, lopper_cmd)
             logger.info(f"Processor IP name identified: {proc_ip_name}")
 
-            # Process based on processor type
-            if "microblaze_riscv" in proc_ip_name:
-                self._process_microblaze_riscv(workspace, str(ws_dir), sdt, proc, lops_dir,
-                                               zephyr_board_dts, lopper_cmd)
-                shutil.rmtree(workspace)
-                logger.info("MicroBlaze RISC-V processing completed successfully")
-            elif "cortexr52" in proc_ip_name:
-                self._process_cortexr52(workspace, str(ws_dir), sdt, proc, lops_dir,
-                                        zephyr_board_dts, lopper_cmd)
-                shutil.rmtree(workspace)
-                logger.info("Cortex-R52 processing completed successfully")
-            elif "cortexr5" in proc_ip_name:
-                self._process_cortexr5(workspace, str(ws_dir), sdt, proc, lops_dir,
-                                       zephyr_board_dts, lopper_cmd)
-                shutil.rmtree(workspace)
-                logger.info("Cortex-R5 processing completed successfully")
-            elif "cortexa78" in proc_ip_name:
-                self._process_cortexa78(workspace, str(ws_dir), sdt, proc, lops_dir,
-                                        zephyr_board_dts, lopper_cmd)
-                shutil.rmtree(workspace)
-                logger.info("Cortex-A78 processing completed successfully")
-            elif "cortexa72" in proc_ip_name:
-                self._process_cortexa72(workspace, str(ws_dir), sdt, proc, lops_dir,
-                                        zephyr_board_dts, lopper_cmd)
-                shutil.rmtree(workspace)
-                logger.info("Cortex-A72 processing completed successfully")
-            elif "cortexa53" in proc_ip_name:
-                self._process_cortexa53(workspace, str(ws_dir), sdt, proc, lops_dir,
-                                        zephyr_board_dts, lopper_cmd)
-                shutil.rmtree(workspace)
-                logger.info("Cortex-A53 processing completed successfully")
-            else:
-                logger.error(f"Unsupported processor type: {proc_ip_name}")
-                sys.exit(1)
+            default_board = self._default_board_name(proc_ip_name, proc)
+            if board_name:
+                if board_name == default_board:
+                    logger.error(
+                        f"Board name '{board_name}' must differ from the default "
+                        f"in-tree board '{default_board}'"
+                    )
+                    sys.exit(1)
+                logger.info(
+                    "Board '%s': default in-tree board '%s' will be restored after publish",
+                    board_name,
+                    default_board,
+                )
 
+            def _run_lopper() -> None:
+                self._run_processor(
+                    proc_ip_name, workspace, ws_dir, sdt, proc, lops_dir,
+                    zephyr_board_dts, lopper_cmd,
+                )
+
+            if board_name:
+                self._run_with_named_board(
+                    ws_dir, workspace, default_board, board_name, _run_lopper
+                )
+            else:
+                _run_lopper()
+
+            shutil.rmtree(workspace)
+            logger.info("Lopper processing completed successfully")
             logger.info("Lopper command execution completed successfully")
 
         except Exception as e:
