@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2023 - 2024 Advanced Micro Devices, Inc. (AMD)
  * Copyright (c) 2023 Alp Sayin <alpsayin@gmail.com>
+ * Copyright (c) 2026 Bittium Wireless oy, Saku Glumoff <saku.glumoff@gmail.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -187,38 +188,45 @@ int32_t xlnx_intc_irq_start(void)
 
 static void xlnx_irq_handler(const void *arg)
 {
-	uint32_t irq, irq_mask;
+	uint32_t irq, irq_mask, irq_pending;
 	struct _isr_table_entry *ite;
 	uint32_t level = POINTER_TO_UINT(arg);
 
 	/* Get the IRQ number generating the interrupt */
-	irq_mask = xlnx_intc_irq_pending();
+	irq_pending = xlnx_intc_irq_pending();
+	irq_mask = irq_pending;
 	irq = find_lsb_set(irq_mask);
 
-	/*
-	 * If the IRQ is out of range, call z_irq_spurious.
-	 * A call to z_irq_spurious will not return.
-	 */
-	if (irq == 0U || irq >= 32)
-		z_irq_spurious(NULL);
+	while (irq) {
+		/*
+		 * If the IRQ is out of range, call z_irq_spurious.
+		 * A call to z_irq_spurious will not return.
+		 */
+		if (irq == 0U || irq >= 32)
+			z_irq_spurious(NULL);
 
-	/*
-	 * xlnx_intc_irq_pending is returning values >= 1 but because it is second level offset
-	 * needs to be found and _sw_isr_table starting from 0 not 1.
-	 */
-	irq -= 1;
+		/*
+		 * xlnx_intc_irq_pending is returning values >= 1 but because it is second level offset
+		 * needs to be found and _sw_isr_table starting from 0 not 1.
+		 */
+		irq -= 1;
 
-	/* Apply level offset from registration as primary or secondary controller */
-	irq += level;
+		/* Apply level offset from registration as primary or secondary controller */
+		irq += level;
 
-	/* Call the corresponding IRQ handler in _sw_isr_table */
-	ite = (struct _isr_table_entry *)&_sw_isr_table[irq];
+		/* Call the corresponding IRQ handler in _sw_isr_table */
+		ite = (struct _isr_table_entry *)&_sw_isr_table[irq];
 
-	/* Table is already filled by z_irq_spurious calls that's why likely save to call it */
-	ite->isr(ite->arg);
+		/* Table is already filled by z_irq_spurious calls that's why likely save to call it */
+		ite->isr(ite->arg);
 
-	/* When IRQ is handled and solved by driver, irq should be ACK to interrupt controller */
-	xlnx_intc_irq_acknowledge(irq_mask);
+		/* Service the next IRQ */
+		irq_mask &= ~(1U << (irq - level));
+		irq = find_lsb_set(irq_mask);
+	}
+
+	/* When IRQs are handled and solved by driver, IRQs should be ACK to interrupt controller */
+	xlnx_intc_irq_acknowledge(irq_pending);
 }
 
 static int xlnx_intc_init(const struct device *dev)
