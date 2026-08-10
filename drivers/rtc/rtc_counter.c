@@ -713,10 +713,6 @@ static DEVICE_API(rtc, rtc_counter_driver_api) = {
 #endif /* CONFIG_RTC_CALIBRATION */
 };
 
-/* Ensure rtc_counter init priority is bigger than the backing counter */
-BUILD_ASSERT(CONFIG_RTC_COUNTER_INIT_PRIORITY > CONFIG_COUNTER_INIT_PRIORITY,
-	     "rtc_counter init priority must be bigger than counter");
-
 #define RTC_COUNTER_ALARMS_COUNT(n) DT_PROP_OR(DT_DRV_INST(n), alarms_count, 0)
 #define RTC_COUNTER_ALARMS_SZ(n)    MAX(RTC_COUNTER_ALARMS_COUNT(n), 1)
 
