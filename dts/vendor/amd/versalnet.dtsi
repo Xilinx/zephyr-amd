@@ -432,30 +432,6 @@
 			interrupts = <GIC_SPI 28 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
 		};
 
-		ttc0_timer0: counter0@f1dc0000 {
-			compatible = "xlnx,ttc-counter";
-			status = "disabled";
-			reg = <0xf1dc0000 0x1000>;
-			interrupts = <GIC_SPI 43 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
-			timer-width = <32>;
-		};
-
-		ttc0_timer1: counter1@f1dc0000 {
-			compatible = "xlnx,ttc-counter";
-			status = "disabled";
-			reg = <0xf1dc0000 0x1000>;
-			interrupts = <GIC_SPI 44 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
-			timer-width = <32>;
-		};
-
-		ttc0_timer2: counter2@f1dc0000 {
-			compatible = "xlnx,ttc-counter";
-			status = "disabled";
-			reg = <0xf1dc0000 0x1000>;
-			interrupts = <GIC_SPI 45 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
-			timer-width = <32>;
-		};
-
 		rtc: rtc@f12a0000 {
 			compatible = "xlnx,zynqmp-rtc";
 			reg = <0xf12a0000 0x100>;
@@ -466,5 +442,36 @@
 			status = "disabled";
 		};
 
+		ttc0: timer@f1dc0000 {
+			compatible = "xlnx,ttc";
+			reg = <0xf1dc0000 0x1000>;
+			timer-width = <32>;
+			clock-frequency = <149998505>;
+			status = "disabled";
+
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			ttc0_timer0: counter@0 {
+				compatible = "xlnx,ttc-counter";
+				reg = <0>;
+				interrupts = <GIC_SPI 43 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+				status = "disabled";
+			};
+
+			ttc0_timer1: counter@1 {
+				compatible = "xlnx,ttc-counter";
+				reg = <1>;
+				interrupts = <GIC_SPI 44 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+				status = "disabled";
+			};
+
+			ttc0_timer2: counter@2 {
+				compatible = "xlnx,ttc-counter";
+				reg = <2>;
+				interrupts = <GIC_SPI 45 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+				status = "disabled";
+			};
+		};
 	};
 };
