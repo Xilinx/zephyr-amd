@@ -1,0 +1,9 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc. (AMD)
+# SPDX-License-Identifier: Apache-2.0
+
+tests:
+  drivers.i2c.xilinx_axi:
+    tags: drivers i2c ztest
+    filter:
+      dt_compat_enabled("xlnx,xps-iic-2.1") or
+      dt_compat_enabled("xlnx,xps-iic-2.00.a")
