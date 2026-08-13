@@ -278,7 +278,13 @@ class LopperCommand(WestCommand):
         )
         parser.add_argument(
             "-o", "--board_overlay",
-            help="optional path to a board .dts file used as the Zephyr board overlay source for Lopper",
+            help=(
+                "optional path to a board .dts/.dtsi overlay file; when set, this "
+                "file is passed as the board_dt argument to gen_domain_dts (takes "
+                "priority over SDT-folder discovery). When omitted, the SDT folder "
+                "(parent directory of -s system-top.dts) is passed as board_dt and "
+                "Lopper discovers board/user DTSI files automatically"
+            ),
         )
         parser.add_argument(
             "-w", "--ws_dir",
@@ -585,7 +591,7 @@ class LopperCommand(WestCommand):
             (paths['generated_board_defconfig'], paths['workspace_board_defconfig'])
         ])
 
-        if zephyr_board_dts:
+        if zephyr_board_dts.is_file() and paths['generated_board_dt'].exists():
             self._copy_files([(paths['generated_board_dt'], paths['workspace_board_overlay'])])
 
     def _process_cortexr52(self, workspace: Path, ws_dir: str, sdt: Path,
@@ -614,8 +620,9 @@ class LopperCommand(WestCommand):
         for cmd in commands:
             runcmd(cmd, cwd=workspace)
 
-        if zephyr_board_dts:
-            self._copy_files([((os.path.join(workspace, "board.overlay")), workspace_overlay)])
+        generated_overlay = workspace / "board.overlay"
+        if zephyr_board_dts.is_file() and generated_overlay.exists():
+            self._copy_files([(generated_overlay, workspace_overlay)])
 
     def _process_cortexa72(self, workspace: Path, ws_dir: str, sdt: Path,
                           proc: str, lops_dir: Optional[Path],
@@ -638,8 +645,9 @@ class LopperCommand(WestCommand):
         for cmd in commands:
             runcmd(cmd, cwd=workspace)
 
-        if zephyr_board_dts:
-            self._copy_files([((os.path.join(workspace, "board.overlay")), workspace_overlay)])
+        generated_overlay = workspace / "board.overlay"
+        if zephyr_board_dts.is_file() and generated_overlay.exists():
+            self._copy_files([(generated_overlay, workspace_overlay)])
 
     def _process_cortexa53(self, workspace: Path, ws_dir: str, sdt: Path,
                           proc: str, lops_dir: Optional[Path],
@@ -662,8 +670,9 @@ class LopperCommand(WestCommand):
         for cmd in commands:
             runcmd(cmd, cwd=workspace)
 
-        if zephyr_board_dts:
-            self._copy_files([((os.path.join(workspace, "board.overlay")), workspace_overlay)])
+        generated_overlay = workspace / "board.overlay"
+        if zephyr_board_dts.is_file() and generated_overlay.exists():
+            self._copy_files([(generated_overlay, workspace_overlay)])
 
     def _process_cortexr5(self, workspace: Path, ws_dir: str, sdt: Path,
                           proc: str, lops_dir: Optional[Path],
@@ -691,8 +700,9 @@ class LopperCommand(WestCommand):
         for cmd in commands:
             runcmd(cmd, cwd=workspace)
 
-        if zephyr_board_dts:
-            self._copy_files([((os.path.join(workspace, "board.overlay")), workspace_overlay)])
+        generated_overlay = workspace / "board.overlay"
+        if zephyr_board_dts.is_file() and generated_overlay.exists():
+            self._copy_files([(generated_overlay, workspace_overlay)])
 
     def _process_cortexa78(self, workspace: Path, ws_dir: str, sdt: Path,
                           proc: str, lops_dir: Optional[Path],
@@ -720,8 +730,9 @@ class LopperCommand(WestCommand):
         for cmd in commands:
             runcmd(cmd, cwd=workspace)
 
-        if zephyr_board_dts:
-            self._copy_files([((os.path.join(workspace, "board.overlay")), workspace_overlay)])
+        generated_overlay = workspace / "board.overlay"
+        if zephyr_board_dts.is_file() and generated_overlay.exists():
+            self._copy_files([(generated_overlay, workspace_overlay)])
 
     def _copy_files(self, file_pairs: List[tuple]) -> None:
         """
@@ -1013,14 +1024,22 @@ class LopperCommand(WestCommand):
 
             workspace = self._setup_workspace(str(ws_dir))
 
-            zephyr_board_dts = None
+            # board_dt argument to gen_domain_dts (zephyr_board_dts):
+            #   -o set  -> explicit overlay .dts/.dtsi file (priority)
+            #   -o omit -> SDT folder (parent of -s); Lopper discovers DTSI files
             if args.board_overlay:
                 zephyr_board_dts = Path(args.board_overlay).resolve()
                 if not zephyr_board_dts.is_file():
                     logger.error(f"Board overlay file not found: {zephyr_board_dts}")
                     sys.exit(1)
+                logger.info(
+                    f"Using -o overlay file as board_dt for gen_domain_dts: {zephyr_board_dts}"
+                )
             else:
-                logger.warning("Board overlay not specified (-o), proceeding without overlay")
+                zephyr_board_dts = sdt.parent
+                logger.info(
+                    f"Using SDT folder as board_dt for gen_domain_dts: {zephyr_board_dts}"
+                )
 
             logger.info(f"Validating processor: {proc}")
             proc_ip_name = self._validate_processor(proc, workspace, sdt, lopper_cmd)
