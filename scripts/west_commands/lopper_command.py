@@ -620,6 +620,10 @@ class LopperCommand(WestCommand):
         for cmd in commands:
             runcmd(cmd, cwd=workspace)
 
+        generated_defconfig = workspace / "board_Kconfig.defconfig"
+        if generated_defconfig.is_file():
+            self._copy_files([(generated_defconfig, workspace_dts.parent / "Kconfig.defconfig")])
+
         generated_overlay = workspace / "board.overlay"
         if zephyr_board_dts.is_file() and generated_overlay.exists():
             self._copy_files([(generated_overlay, workspace_overlay)])
@@ -645,6 +649,10 @@ class LopperCommand(WestCommand):
         for cmd in commands:
             runcmd(cmd, cwd=workspace)
 
+        generated_defconfig = workspace / "board_Kconfig.defconfig"
+        if generated_defconfig.is_file():
+            self._copy_files([(generated_defconfig, workspace_dts.parent / "Kconfig.defconfig")])
+
         generated_overlay = workspace / "board.overlay"
         if zephyr_board_dts.is_file() and generated_overlay.exists():
             self._copy_files([(generated_overlay, workspace_overlay)])
@@ -669,6 +677,10 @@ class LopperCommand(WestCommand):
 
         for cmd in commands:
             runcmd(cmd, cwd=workspace)
+
+        generated_defconfig = workspace / "board_Kconfig.defconfig"
+        if generated_defconfig.is_file():
+            self._copy_files([(generated_defconfig, workspace_dts.parent / "Kconfig.defconfig")])
 
         generated_overlay = workspace / "board.overlay"
         if zephyr_board_dts.is_file() and generated_overlay.exists():
@@ -700,6 +712,10 @@ class LopperCommand(WestCommand):
         for cmd in commands:
             runcmd(cmd, cwd=workspace)
 
+        generated_defconfig = workspace / "board_Kconfig.defconfig"
+        if generated_defconfig.is_file():
+            self._copy_files([(generated_defconfig, workspace_dts.parent / "Kconfig.defconfig")])
+
         generated_overlay = workspace / "board.overlay"
         if zephyr_board_dts.is_file() and generated_overlay.exists():
             self._copy_files([(generated_overlay, workspace_overlay)])
@@ -729,6 +745,10 @@ class LopperCommand(WestCommand):
 
         for cmd in commands:
             runcmd(cmd, cwd=workspace)
+
+        generated_defconfig = workspace / "board_Kconfig.defconfig"
+        if generated_defconfig.is_file():
+            self._copy_files([(generated_defconfig, workspace_dts.parent / "Kconfig.defconfig")])
 
         generated_overlay = workspace / "board.overlay"
         if zephyr_board_dts.is_file() and generated_overlay.exists():
