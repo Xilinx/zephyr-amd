@@ -8,6 +8,7 @@ config COUNTER_XLNX_TTC
 	bool "Xilinx TTC (Triple Timer Counter) driver"
 	default y
 	depends on DT_HAS_XLNX_TTC_COUNTER_ENABLED
+	depends on GIC
 	select DYNAMIC_INTERRUPTS
 	help
 	  Enable driver for Xilinx TTC (Triple Timer Counter).

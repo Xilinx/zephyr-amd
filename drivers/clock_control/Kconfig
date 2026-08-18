@@ -116,6 +116,8 @@ source "drivers/clock_control/Kconfig.siwx91x"
 
 source "drivers/clock_control/Kconfig.wch_rcc"
 
+source "drivers/clock_control/Kconfig.xclk_wiz"
+
 source "drivers/clock_control/Kconfig.it51xxx"
 
 source "drivers/clock_control/Kconfig.mchp"
