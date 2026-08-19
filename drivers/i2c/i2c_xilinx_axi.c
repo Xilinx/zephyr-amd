@@ -22,6 +22,12 @@ struct i2c_xilinx_axi_config {
 	void (*irq_config_func)(const struct device *dev);
 	/* Whether device has working dynamic read (broken prior to core rev. 2.1) */
 	bool dyn_read_working;
+	/* AXI input clock in Hz, from optional DT "clocks"; 0 = none (setclk skipped) */
+	uint32_t input_clk_hz;
+	/* Default SCL speed in Hz, from DT "clock-frequency" (applied at init) */
+	uint32_t default_bitrate;
+	/* SCL half-period compensation in AXI cycles, from optional DT "serial-clk-delay" */
+	uint32_t serial_clk_delay;
 };
 
 struct i2c_xilinx_axi_data {
@@ -32,6 +38,9 @@ struct i2c_xilinx_axi_data {
 	/* Provides exclusion against multiple concurrent requests */
 	struct k_mutex mutex;
 
+	/* Current SCL bus speed in Hz, set by configure() */
+	uint32_t bus_speed;
+
 #if defined(CONFIG_I2C_TARGET)
 	struct i2c_target_config *target_cfg;
 	bool target_reading;
@@ -39,6 +48,27 @@ struct i2c_xilinx_axi_data {
 	bool target_writing;
 #endif
 };
+
+/*
+ * SCL setup/hold times (ns) per speed mode, derived from the I2C spec and
+ * PG090 (matching the mainline Linux xiic timing_reg_values[]).
+ * Index: 0 = 100 kHz, 1 = 400 kHz, 2 = 1 MHz.
+ */
+struct i2c_xilinx_axi_timing {
+	uint32_t tsusta; /* START condition setup time */
+	uint32_t tsusto; /* STOP condition setup time */
+	uint32_t thdsta; /* START condition hold time */
+	uint32_t tsudat; /* data setup time */
+	uint32_t tbuf;   /* bus free time between STOP and START */
+};
+
+static const struct i2c_xilinx_axi_timing i2c_xilinx_axi_timings[] = {
+	{5700, 5000, 4300, 550, 5000}, /* Standard mode (100 kHz) */
+	{900,  900,  900,  400, 1600}, /* Fast mode (400 kHz)     */
+	{380,  380,  380,  170, 620},  /* Fast mode plus (1 MHz)  */
+};
+
+#define I2C_XILINX_AXI_NS_PER_SEC   1000000000ULL
 
 static void i2c_xilinx_axi_reinit(const struct device *dev)
 {
@@ -57,6 +87,8 @@ static void i2c_xilinx_axi_reinit(const struct device *dev)
 	(ISR_ADDR_TARGET | ISR_NOT_ADDR_TARGET | ISR_RX_FIFO_FULL | ISR_TX_FIFO_EMPTY |            \
 	 ISR_TX_ERR_TARGET_COMP)
 
+#define I2C_XILINX_AXI_10BIT_ADDR_MAX 0x3FFU
+
 static void i2c_xilinx_axi_target_setup(const struct device *dev, struct i2c_target_config *cfg)
 {
 	mm_reg_t base = DEVICE_MMIO_GET(dev);
@@ -64,7 +96,18 @@ static void i2c_xilinx_axi_target_setup(const struct device *dev, struct i2c_tar
 	i2c_xilinx_axi_reinit(dev);
 
 	sys_write32(ISR_ADDR_TARGET, base + REG_IER);
-	sys_write32(cfg->address << 1, base + REG_ADR);
+	if (cfg->flags & I2C_TARGET_FLAGS_ADDR_10_BITS) {
+		/*
+		 * The AXI IIC splits a 10-bit target address across two
+		 * registers: ADR[7:1] holds the lower 7 bits (A6..A0) and
+		 * TEN_ADR[2:0] holds the upper 3 bits (A9..A7).
+		 */
+		sys_write32((cfg->address & 0x7FU) << 1U, base + REG_ADR);
+		sys_write32((cfg->address >> 7U) & 0x07U, base + REG_TEN_ADR);
+	} else {
+		sys_write32(cfg->address << 1U, base + REG_ADR);
+		sys_write32(0U, base + REG_TEN_ADR);
+	}
 	sys_write32(0, base + REG_RX_FIFO_PIRQ);
 }
 
@@ -75,8 +118,11 @@ static int i2c_xilinx_axi_target_register(const struct device *dev, struct i2c_t
 	int ret;
 
 	if (cfg->flags & I2C_TARGET_FLAGS_ADDR_10_BITS) {
-		/* Optionally supported in core, but not implemented in driver yet */
-		return -EOPNOTSUPP;
+		if (cfg->address > I2C_XILINX_AXI_10BIT_ADDR_MAX) {
+			return -EINVAL;
+		}
+	} else if (cfg->address > I2C_ADDR_7BIT_MAX) {
+		return -EINVAL;
 	}
 
 	k_mutex_lock(&data->mutex, K_FOREVER);
@@ -120,7 +166,8 @@ static int i2c_xilinx_axi_target_unregister(const struct device *dev, struct i2c
 	}
 
 	data->target_cfg = NULL;
-	sys_write32(0, base + REG_ADR);
+	sys_write32(0U, base + REG_ADR);
+	sys_write32(0U, base + REG_TEN_ADR);
 
 	sys_write32(CR_EN, base + REG_CR);
 	int_enable = sys_read32(base + REG_IER);
@@ -255,12 +302,154 @@ static void i2c_xilinx_axi_isr(const struct device *dev)
 	}
 }
 
+static inline uint32_t i2c_xilinx_axi_ns_to_cycles(uint32_t ns, uint32_t clk_hz)
+{
+	/* Convert a nanosecond value to AXI clock cycles (minus 1 for the register). */
+	uint64_t cycles = ((uint64_t)ns * clk_hz) / I2C_XILINX_AXI_NS_PER_SEC;
+
+	return (cycles > 0U) ? (uint32_t)(cycles - 1U) : 0U;
+}
+
+static int i2c_xilinx_axi_setclk(const struct device *dev, uint32_t fscl_hz)
+{
+	const struct i2c_xilinx_axi_config *config = dev->config;
+	const struct i2c_xilinx_axi_timing *timing;
+	mm_reg_t base = DEVICE_MMIO_GET(dev);
+	uint32_t half_period;
+	uint32_t timing_idx;
+	uint32_t base_div;
+	uint32_t overhead;
+
+	/*
+	 * Program the SCL timing registers for the requested bus speed using the
+	 * AXI input clock. Only called when an input clock is provided via DT
+	 * "clocks". On some AXI IIC cores the timing registers must be programmed
+	 * while the core is idle/disabled; if the measured SCL is wrong on
+	 * hardware, move this before the CR_EN write in i2c_xilinx_axi_reinit().
+	 */
+	if (fscl_hz <= I2C_BITRATE_STANDARD) {
+		timing_idx = 0U;
+	} else if (fscl_hz <= I2C_BITRATE_FAST) {
+		timing_idx = 1U;
+	} else if (fscl_hz <= I2C_BITRATE_FAST_PLUS) {
+		timing_idx = 2U;
+	} else {
+		return -EINVAL;
+	}
+	timing = &i2c_xilinx_axi_timings[timing_idx];
+
+	/*
+	 * SCL high/low half-period in AXI cycles
+	 * half_period = AxiClk / (2 * Fscl) - 7 - serial_clk_delay
+	 * (the -7 and delay account for the core's internal fixed overhead)
+	 *
+	 * Compute the base divisor and overhead separately and range-check
+	 * before subtracting: the arithmetic is unsigned, so a low AXI clock
+	 * or a large serial-clk-delay would otherwise wrap to a huge invalid
+	 * half-period instead of failing.
+	 */
+	base_div = config->input_clk_hz / (2U * fscl_hz);
+	overhead = 7U + config->serial_clk_delay;
+
+	if (base_div <= overhead) {
+		LOG_ERR("AXI clk %u too low for %u Hz SCL (delay %u)",
+			config->input_clk_hz, fscl_hz, config->serial_clk_delay);
+		return -EINVAL;
+	}
+	half_period = base_div - overhead;
+
+	/*
+	 * THIGH/TLOW use N-1 encoding (PG090), so write half_period - 1. This
+	 * matches the mainline Linux xiic driver (xiic_setclk), which writes
+	 * reg_val - 1 and rejects reg_val == 0. The base_div <= overhead check
+	 * above rejects half_period == 0, so the minimum value written here is 0
+	 * (when half_period == 1), which is valid.
+	 */
+	sys_write32(half_period - 1U, base + REG_THIGH);
+	sys_write32(half_period - 1U, base + REG_TLOW);
+
+	/* Setup/hold times: convert the spec ns values to AXI clock cycles. */
+	sys_write32(i2c_xilinx_axi_ns_to_cycles(timing->tsusta, config->input_clk_hz),
+		    base + REG_TSUSTA);
+	sys_write32(i2c_xilinx_axi_ns_to_cycles(timing->tsusto, config->input_clk_hz),
+		    base + REG_TSUSTO);
+	sys_write32(i2c_xilinx_axi_ns_to_cycles(timing->thdsta, config->input_clk_hz),
+		    base + REG_THDSTA);
+	sys_write32(i2c_xilinx_axi_ns_to_cycles(timing->tsudat, config->input_clk_hz),
+		    base + REG_TSUDAT);
+	sys_write32(i2c_xilinx_axi_ns_to_cycles(timing->tbuf, config->input_clk_hz),
+		    base + REG_TBUF);
+	sys_write32(1U, base + REG_THDDAT);
+
+	LOG_INF("SCL set to %u Hz (AXI clk %u Hz)", fscl_hz, config->input_clk_hz);
+	return 0;
+}
+
 static int i2c_xilinx_axi_configure(const struct device *dev, uint32_t dev_config)
 {
+	const struct i2c_xilinx_axi_config *config = dev->config;
+	struct i2c_xilinx_axi_data *data = dev->data;
 	mm_reg_t base = DEVICE_MMIO_GET(dev);
+	uint32_t fscl_hz;
+	int ret;
+
+	if (!(dev_config & I2C_MODE_CONTROLLER)) {
+		return -ENOTSUP;
+	}
+
+	switch (I2C_SPEED_GET(dev_config)) {
+	case I2C_SPEED_STANDARD:
+		fscl_hz = I2C_BITRATE_STANDARD;
+		break;
+	case I2C_SPEED_FAST:
+		fscl_hz = I2C_BITRATE_FAST;
+		break;
+	case I2C_SPEED_FAST_PLUS:
+		fscl_hz = I2C_BITRATE_FAST_PLUS;
+		break;
+	default:
+		return -ENOTSUP;
+	}
 
 	LOG_INF("Configuring %s at 0x%08" PRIxPTR, dev->name, base);
 	i2c_xilinx_axi_reinit(dev);
+
+	if (config->input_clk_hz != 0U) {
+		/* Input clock provided: program the SCL timing registers. */
+		ret = i2c_xilinx_axi_setclk(dev, fscl_hz);
+		if (ret) {
+			return ret;
+		}
+	} else {
+		/*
+		 * No input clock in DT: the SCL frequency is fixed by the FPGA
+		 * build and cannot be changed here. Record the requested speed
+		 * for get_config() as a best-effort value.
+		 */
+		LOG_DBG("No DT 'clocks' - SCL fixed by FPGA build, not reprogrammed");
+	}
+
+	data->bus_speed = fscl_hz;
+	return 0;
+}
+
+static int i2c_xilinx_axi_get_config(const struct device *dev, uint32_t *dev_config)
+{
+	struct i2c_xilinx_axi_data *data = dev->data;
+	uint32_t speed_cfg;
+
+	/* Report the SCL speed last applied by configure(). */
+	if (data->bus_speed <= I2C_BITRATE_STANDARD) {
+		speed_cfg = I2C_SPEED_SET(I2C_SPEED_STANDARD);
+	} else if (data->bus_speed <= I2C_BITRATE_FAST) {
+		speed_cfg = I2C_SPEED_SET(I2C_SPEED_FAST);
+	} else if (data->bus_speed <= I2C_BITRATE_FAST_PLUS) {
+		speed_cfg = I2C_SPEED_SET(I2C_SPEED_FAST_PLUS);
+	} else {
+		return -ERANGE;
+	}
+
+	*dev_config = speed_cfg | I2C_MODE_CONTROLLER;
 	return 0;
 }
 
@@ -331,6 +520,69 @@ static int i2c_xilinx_axi_wait_rx_full(const struct device *dev, uint32_t read_b
 	return 0;
 }
 
+static int i2c_xilinx_axi_wait_tx_done(const struct device *dev)
+{
+	const uint32_t finish_bits = ISR_BUS_NOT_BUSY | ISR_TX_FIFO_EMPTY;
+
+	uint32_t events = i2c_xilinx_axi_wait_interrupt(dev, finish_bits | ISR_TX_ERR_TARGET_COMP |
+								     ISR_ARB_LOST);
+	if (!(events & finish_bits) || (events & ~finish_bits)) {
+		if (!events) {
+			return -ETIMEDOUT;
+		}
+		if (events & ISR_ARB_LOST) {
+			LOG_ERR("Arbitration lost on TX");
+			return -EAGAIN;
+		}
+		LOG_ERR("TX received NAK");
+		return -ENXIO;
+	}
+	return 0;
+}
+
+static inline uint8_t i2c_xilinx_axi_addr1_10bit(uint16_t addr, bool is_read)
+{
+	/* First byte of a 10-bit address */
+	return 0xF0U | (uint8_t)((addr >> 7U) & 0x06U) | (is_read ? 1U : 0U);
+}
+
+static inline uint8_t i2c_xilinx_axi_addr2_10bit(uint16_t addr)
+{
+	/* Second byte of a 10-bit address */
+	return (uint8_t)(addr & 0xFFU);
+}
+
+static int i2c_xilinx_axi_send_10bit_read_addr(const struct device *dev,
+					       const struct i2c_msg *msg, uint16_t addr)
+{
+	struct i2c_xilinx_axi_data *data = dev->data;
+	mm_reg_t base = DEVICE_MMIO_GET(dev);
+	uint32_t cr = CR_EN | CR_TX;
+	k_spinlock_key_t key;
+
+	/*
+	 * 10-bit read, phase 1: address the target in the *write* direction by
+	 * sending both address bytes so it latches its full address. The bus is
+	 * left held (no STOP) so the caller can issue a repeated START in read
+	 * direction. Dynamic mode is 7-bit only, so this is always non-dynamic.
+	 */
+	if (msg->flags & I2C_MSG_RESTART) {
+		cr |= CR_MSMS | CR_RSTA;
+	}
+
+	i2c_xilinx_axi_clear_interrupt(dev, ISR_TX_ERR_TARGET_COMP | ISR_ARB_LOST);
+	sys_write32(cr, base + REG_CR);
+
+	key = k_spin_lock(&data->lock);
+	sys_write32(i2c_xilinx_axi_addr1_10bit(addr, false) | TX_FIFO_START, base + REG_TX_FIFO);
+	sys_write32(i2c_xilinx_axi_addr2_10bit(addr), base + REG_TX_FIFO);
+	i2c_xilinx_axi_clear_interrupt_no_lock(dev, ISR_TX_FIFO_EMPTY | ISR_BUS_NOT_BUSY);
+	k_spin_unlock(&data->lock, key);
+
+	/* Wait for both address bytes to be shifted out (and ACKed). */
+	return i2c_xilinx_axi_wait_tx_done(dev);
+}
+
 static int i2c_xilinx_axi_read_nondyn(const struct device *dev, struct i2c_msg *msg, uint16_t addr)
 {
 	mm_reg_t base = DEVICE_MMIO_GET(dev);
@@ -366,7 +618,29 @@ static int i2c_xilinx_axi_read_nondyn(const struct device *dev, struct i2c_msg *
 	 */
 	sys_write32(0, base + REG_RX_FIFO_PIRQ);
 
-	if (msg->flags & I2C_MSG_RESTART) {
+	if (msg->flags & I2C_MSG_ADDR_10_BITS) {
+		/*
+		 * 10-bit read. The target must already know its full address
+		 * before it will respond to a read-direction first byte. When
+		 * this read is NOT preceded by a write to the same target (no
+		 * repeated START), select it first with both address bytes in
+		 * write direction. When it IS a repeated START (e.g. the read
+		 * half of i2c_write_read), the target was just addressed by the
+		 * preceding write, so re-sending the address bytes would confuse
+		 * its slave state machine and cause arbitration loss - issue the
+		 * repeated START in read direction directly.
+		 */
+		if (!(msg->flags & I2C_MSG_RESTART)) {
+			int ret = i2c_xilinx_axi_send_10bit_read_addr(dev, msg, addr);
+
+			if (ret) {
+				return ret;
+			}
+		}
+		cr |= CR_RSTA;
+		sys_write32(cr, base + REG_CR);
+		sys_write32(i2c_xilinx_axi_addr1_10bit(addr, true), base + REG_TX_FIFO);
+	} else if (msg->flags & I2C_MSG_RESTART) {
 		cr |= CR_RSTA;
 
 		sys_write32(cr, base + REG_CR);
@@ -450,26 +724,6 @@ static int i2c_xilinx_axi_read_dyn(const struct device *dev, struct i2c_msg *msg
 	return 0;
 }
 
-static int i2c_xilinx_axi_wait_tx_done(const struct device *dev)
-{
-	const uint32_t finish_bits = ISR_BUS_NOT_BUSY | ISR_TX_FIFO_EMPTY;
-
-	uint32_t events = i2c_xilinx_axi_wait_interrupt(dev, finish_bits | ISR_TX_ERR_TARGET_COMP |
-								     ISR_ARB_LOST);
-	if (!(events & finish_bits) || (events & ~finish_bits)) {
-		if (!events) {
-			return -ETIMEDOUT;
-		}
-		if (events & ISR_ARB_LOST) {
-			LOG_ERR("Arbitration lost on TX");
-			return -EAGAIN;
-		}
-		LOG_ERR("TX received NAK");
-		return -ENXIO;
-	}
-	return 0;
-}
-
 static int i2c_xilinx_axi_wait_not_busy(const struct device *dev)
 {
 	mm_reg_t base = DEVICE_MMIO_GET(dev);
@@ -486,6 +740,99 @@ static int i2c_xilinx_axi_wait_not_busy(const struct device *dev)
 	return 0;
 }
 
+static int i2c_xilinx_axi_write_10bit(const struct device *dev, const struct i2c_msg *msg,
+				      uint16_t addr)
+{
+	struct i2c_xilinx_axi_data *data = dev->data;
+	mm_reg_t base = DEVICE_MMIO_GET(dev);
+	uint32_t cr = sys_read32(base + REG_CR);
+	const uint8_t *write_ptr = msg->buf;
+	uint32_t fifo_space = FIFO_SIZE;
+	uint32_t bytes_left = msg->len;
+	bool send_addr;
+	int ret;
+
+	/*
+	 * Send the 10-bit address only when starting or restarting a
+	 * transaction. A message with no repeated START that arrives while we
+	 * are already bus master (CR_MSMS held from a previous no-STOP message)
+	 * is a continuation of the same write, so its data is appended without
+	 * re-addressing.
+	 */
+	send_addr = (msg->flags & I2C_MSG_RESTART) || !(cr & CR_MSMS);
+
+	i2c_xilinx_axi_clear_interrupt(dev, ISR_TX_ERR_TARGET_COMP | ISR_ARB_LOST);
+
+	if (send_addr) {
+		/*
+		 * Dynamic mode (TX_FIFO_START/STOP) is 7-bit only, so 10-bit
+		 * writes use non-dynamic mode: CR_MSMS makes the (repeated)
+		 * START and both address bytes plus data go into the TX FIFO
+		 * without the dynamic flags. This keeps a 10-bit write and a
+		 * following repeated-START read (e.g. the read half of
+		 * i2c_write_read) in the same mode, so the repeated START is
+		 * clean and the controller does not lose arbitration.
+		 */
+		cr = CR_EN | CR_TX | CR_MSMS;
+		if (msg->flags & I2C_MSG_RESTART) {
+			cr |= CR_RSTA;
+		}
+		sys_write32(cr, base + REG_CR);
+		sys_write32(i2c_xilinx_axi_addr1_10bit(addr, false), base + REG_TX_FIFO);
+		sys_write32(i2c_xilinx_axi_addr2_10bit(addr), base + REG_TX_FIFO);
+		fifo_space = FIFO_SIZE - 2; /* two address bytes occupy the FIFO */
+	}
+
+	/*
+	 * In non-dynamic mode a STOP is generated by clearing CR_MSMS, and this
+	 * only takes effect while a byte is still being transmitted; clearing it
+	 * after the FIFO has drained leaves the bus stuck busy. The final byte is
+	 * therefore reserved and queued together with the CR_MSMS clear so the STOP
+	 * follows it, as done on the read path. When no STOP is requested, CR_MSMS
+	 * is left set to hold the bus for a following repeated START.
+	 */
+	while (bytes_left > ((msg->flags & I2C_MSG_STOP) ? 1U : 0U)) {
+		uint32_t reserve = (msg->flags & I2C_MSG_STOP) ? 1U : 0U;
+		uint32_t bytes_to_send = bytes_left - reserve;
+		const k_spinlock_key_t key = k_spin_lock(&data->lock);
+
+		if (bytes_to_send > fifo_space) {
+			bytes_to_send = fifo_space;
+		}
+		while (bytes_to_send) {
+			sys_write32(*write_ptr++, base + REG_TX_FIFO);
+			bytes_to_send--;
+			bytes_left--;
+		}
+		i2c_xilinx_axi_clear_interrupt_no_lock(dev, ISR_TX_FIFO_EMPTY | ISR_BUS_NOT_BUSY);
+		k_spin_unlock(&data->lock, key);
+
+		ret = i2c_xilinx_axi_wait_tx_done(dev);
+		if (ret) {
+			return ret;
+		}
+		fifo_space = FIFO_SIZE;
+	}
+
+	if (msg->flags & I2C_MSG_STOP) {
+		const k_spinlock_key_t key = k_spin_lock(&data->lock);
+
+		if (bytes_left) {
+			sys_write32(*write_ptr++, base + REG_TX_FIFO);
+			bytes_left--;
+		}
+		sys_write32(sys_read32(base + REG_CR) & ~CR_MSMS, base + REG_CR);
+		i2c_xilinx_axi_clear_interrupt_no_lock(dev, ISR_TX_FIFO_EMPTY | ISR_BUS_NOT_BUSY);
+		k_spin_unlock(&data->lock, key);
+
+		ret = i2c_xilinx_axi_wait_tx_done(dev);
+		if (ret) {
+			return ret;
+		}
+	}
+	return 0;
+}
+
 static int i2c_xilinx_axi_write(const struct device *dev, const struct i2c_msg *msg, uint16_t addr)
 {
 	struct i2c_xilinx_axi_data *data = dev->data;
@@ -494,6 +841,10 @@ static int i2c_xilinx_axi_write(const struct device *dev, const struct i2c_msg *
 	uint32_t bytes_left = msg->len;
 	uint32_t cr = CR_EN | CR_TX;
 	uint32_t fifo_space = FIFO_SIZE - 1; /* account for address being written */
+
+	if (msg->flags & I2C_MSG_ADDR_10_BITS) {
+		return i2c_xilinx_axi_write_10bit(dev, msg, addr);
+	}
 
 	if (msg->flags & I2C_MSG_RESTART) {
 		cr |= CR_MSMS | CR_RSTA;
@@ -568,13 +919,14 @@ static int i2c_xilinx_axi_transfer(const struct device *dev, struct i2c_msg *msg
 	i2c_xilinx_axi_reinit(dev);
 
 	do {
-		if (msgs->flags & I2C_MSG_ADDR_10_BITS) {
-			/* Optionally supported in core, but not implemented in driver yet */
-			ret = -EOPNOTSUPP;
-			goto out_check_target;
-		}
 		if (msgs->flags & I2C_MSG_READ) {
-			if (config->dyn_read_working && msgs->len <= MAX_DYNAMIC_READ_LEN) {
+			/*
+			 * Dynamic mode only supports 7-bit addressing, so 10-bit
+			 * reads must go through the non-dynamic path.
+			 */
+			if (config->dyn_read_working &&
+			    !(msgs->flags & I2C_MSG_ADDR_10_BITS) &&
+			    msgs->len <= MAX_DYNAMIC_READ_LEN) {
 				ret = i2c_xilinx_axi_read_dyn(dev, msgs, addr);
 			} else {
 				ret = i2c_xilinx_axi_read_nondyn(dev, msgs, addr);
@@ -620,7 +972,9 @@ static int i2c_xilinx_axi_init(const struct device *dev)
 	k_event_init(&data->irq_event);
 	k_mutex_init(&data->mutex);
 
-	error = i2c_xilinx_axi_configure(dev, I2C_MODE_CONTROLLER);
+	/* Apply the default bus speed from the DT "clock-frequency" property. */
+	error = i2c_xilinx_axi_configure(dev, I2C_MODE_CONTROLLER |
+					 i2c_map_dt_bitrate(config->default_bitrate));
 	if (error) {
 		return error;
 	}
@@ -633,6 +987,7 @@ static int i2c_xilinx_axi_init(const struct device *dev)
 
 static DEVICE_API(i2c, i2c_xilinx_axi_driver_api) = {
 	.configure = i2c_xilinx_axi_configure,
+	.get_config = i2c_xilinx_axi_get_config,
 	.transfer = i2c_xilinx_axi_transfer,
 #if defined(CONFIG_I2C_TARGET)
 	.target_register = i2c_xilinx_axi_target_register,
@@ -649,7 +1004,11 @@ static DEVICE_API(i2c, i2c_xilinx_axi_driver_api) = {
 	static const struct i2c_xilinx_axi_config i2c_xilinx_axi_config_##compat##_##n = {         \
 		DEVICE_MMIO_ROM_INIT(DT_DRV_INST(n)),                                              \
 		.irq_config_func = i2c_xilinx_axi_config_func_##compat##_##n,                      \
-		.dyn_read_working = DT_INST_NODE_HAS_COMPAT(n, xlnx_xps_iic_2_1)};                 \
+		.dyn_read_working = DT_INST_NODE_HAS_COMPAT(n, xlnx_xps_iic_2_1),                  \
+		.input_clk_hz = COND_CODE_1(DT_INST_NODE_HAS_PROP(n, clocks),                      \
+			(DT_INST_PROP_BY_PHANDLE(n, clocks, clock_frequency)), (0)),               \
+		.default_bitrate = DT_INST_PROP_OR(n, clock_frequency, I2C_BITRATE_STANDARD),      \
+		.serial_clk_delay = DT_INST_PROP_OR(n, serial_clk_delay, 0)};                      \
                                                                                                    \
 	static struct i2c_xilinx_axi_data i2c_xilinx_axi_data_##compat##_##n;                      \
                                                                                                    \
