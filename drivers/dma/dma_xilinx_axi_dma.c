@@ -125,10 +125,6 @@ LOG_MODULE_REGISTER(dma_xilinx_axi_dma, CONFIG_DMA_LOG_LEVEL);
 #define XILINX_AXI_DMA_REGS_SG_CTRL_USER_MASK  0x00000F00
 #define XILINX_AXI_DMA_REGS_SG_CTRL_RES2_MASK  0xFFFFF000
 
-/* Default BD counts when none has been explicitly configured at runtime. */
-#define XILINX_AXI_DMA_SG_DESCRIPTOR_NUM_TX_DEFAULT 16
-#define XILINX_AXI_DMA_SG_DESCRIPTOR_NUM_RX_DEFAULT 16
-
 static inline void dma_xilinx_axi_dma_flush_dcache(void *addr, size_t len)
 {
 #ifdef CONFIG_DMA_XILINX_AXI_DMA_MANUAL_CACHE_COHERENCY
@@ -234,6 +230,11 @@ struct dma_xilinx_axi_dma_data {
 	struct dma_xilinx_axi_dma_channel *channels;
 	/* Set by dma_stop(); dma_configure() performs a DMA soft-reset then clears it. */
 	bool needs_dma_soft_reset;
+
+	__aligned(64) struct dma_xilinx_axi_dma_sg_descriptor
+		descriptors_tx[CONFIG_DMA_XILINX_AXI_DMA_SG_DESCRIPTOR_NUM_TX];
+	__aligned(64) struct dma_xilinx_axi_dma_sg_descriptor
+		descriptors_rx[CONFIG_DMA_XILINX_AXI_DMA_SG_DESCRIPTOR_NUM_RX];
 };
 
 /*
@@ -244,9 +245,6 @@ struct dma_xilinx_axi_dma_data {
  */
 #define XILINX_AXI_DMA_LOCK_KEY_TX_ENABLED BIT(XILINX_AXI_DMA_TX_CHANNEL_NUM)
 #define XILINX_AXI_DMA_LOCK_KEY_RX_ENABLED BIT(XILINX_AXI_DMA_RX_CHANNEL_NUM)
-
-static int dma_xilinx_axi_dma_alloc_sg_ring(struct dma_xilinx_axi_dma_channel *channel,
-						size_t num_desc);
 
 static inline int dma_xilinx_axi_dma_lock_irq(const struct device *dev, const uint32_t channel_num)
 {
@@ -602,13 +600,6 @@ static int dma_xilinx_axi_dma_stop(const struct device *dev, uint32_t channel)
 	/* commit before returning to caller */
 	barrier_dmem_fence_full();
 
-	/* Free the TX/RX SG descriptor ring; dma_configure() will allocate a fresh ring on next start. */
-	if (channel_data->descriptors) {
-		k_free((void *)channel_data->descriptors);
-		channel_data->descriptors = NULL;
-		channel_data->num_descriptors = 0;
-	}
-
 	/* Flag DMA soft reset on next dma_configure(). */
 	data->needs_dma_soft_reset = true;
 
@@ -781,7 +772,6 @@ static int dma_xilinx_axi_dma_configure(const struct device *dev, uint32_t chann
 	struct dma_block_config *current_block = dma_cfg->head_block;
 	int ret = 0;
 	int block_count = 0;
-	size_t ring_size;
 
 	if (channel >= cfg->channels) {
 		LOG_ERR("Invalid channel %" PRIu32 " - must be < %" PRIu32 "!", channel,
@@ -829,25 +819,6 @@ static int dma_xilinx_axi_dma_configure(const struct device *dev, uint32_t chann
 		return err;
 	}
 
-	/* Allocate the SG descriptor ring.
-	 * Use dma_cfg->num_sg_descriptors if the caller(axiethernet) specified a non-zero value;
-	 * otherwise fall back to the driver's compiled-in default.
-	 */
-	if (dma_cfg->num_sg_descriptors > 0) {
-		ring_size = dma_cfg->num_sg_descriptors;
-	} else if (channel == XILINX_AXI_DMA_TX_CHANNEL_NUM) {
-		ring_size = XILINX_AXI_DMA_SG_DESCRIPTOR_NUM_TX_DEFAULT;
-	} else {
-		ring_size = XILINX_AXI_DMA_SG_DESCRIPTOR_NUM_RX_DEFAULT;
-	}
-
-	ret = dma_xilinx_axi_dma_alloc_sg_ring(&data->channels[channel], ring_size);
-	if (ret) {
-		LOG_ERR("Channel %" PRIu32 ": failed to allocate %zu SG descriptors: %d",
-			channel, ring_size, ret);
-		return ret;
-	}
-
 	LOG_DBG("Configuring %zu DMA descriptors for %s", data->channels[channel].num_descriptors,
 		channel == XILINX_AXI_DMA_TX_CHANNEL_NUM ? "TX" : "RX");
 
@@ -855,13 +826,13 @@ static int dma_xilinx_axi_dma_configure(const struct device *dev, uint32_t chann
 	/* segment */
 	data->channels[channel].populated_desc_index = data->channels[channel].num_descriptors - 1;
 	data->channels[channel].completion_desc_index = 0;
-	for (int i = 0; i < data->channels[channel].num_descriptors; i++) {
+	for (int i = 0; i < (int)data->channels[channel].num_descriptors; i++) {
 		uintptr_t nextdesc;
 		uint32_t low_bytes;
 #ifdef CONFIG_DMA_64BIT
 		uint32_t high_bytes;
 #endif
-		if (i + 1 < data->channels[channel].num_descriptors) {
+		if (i + 1 < (int)data->channels[channel].num_descriptors) {
 			nextdesc = (uintptr_t)&data->channels[channel].descriptors[i + 1];
 		} else {
 			nextdesc = (uintptr_t)&data->channels[channel].descriptors[0];
@@ -961,33 +932,6 @@ static bool dma_xilinx_axi_dma_chan_filter(const struct device *dev, int channel
 	return false;
 }
 
-/* Allocate the SG descriptor ring for a TX/RX channel. */
-static int dma_xilinx_axi_dma_alloc_sg_ring(struct dma_xilinx_axi_dma_channel *channel,
-						size_t num_desc)
-{
-	/* Free any previously allocated ring first */
-	if (channel->descriptors) {
-		k_free((void *)channel->descriptors);
-		channel->descriptors = NULL;
-	}
-
-	size_t alloc_size = num_desc * sizeof(struct dma_xilinx_axi_dma_sg_descriptor);
-
-	/* DMA SG descriptors must be 64-byte aligned (hardware requirement) */
-	channel->descriptors = k_aligned_alloc(64, alloc_size);
-	if (!channel->descriptors) {
-		return -ENOMEM;
-	}
-
-	/* k_aligned_alloc does NOT zero memory. Zero-initialise explicitly */
-	memset((void *)channel->descriptors, 0, alloc_size);
-
-	channel->num_descriptors = num_desc;
-	channel->populated_desc_index = num_desc - 1;
-	channel->completion_desc_index = 0;
-	return 0;
-}
-
 /* DMA API callbacks */
 static DEVICE_API(dma, dma_xilinx_axi_dma_driver_api) = {
 	.config = dma_xilinx_axi_dma_configure,
@@ -1012,10 +956,16 @@ static int dma_xilinx_axi_dma_init(const struct device *dev)
 		return -EINVAL;
 	}
 
+	data->channels[XILINX_AXI_DMA_TX_CHANNEL_NUM].descriptors = data->descriptors_tx;
+	data->channels[XILINX_AXI_DMA_TX_CHANNEL_NUM].num_descriptors =
+		ARRAY_SIZE(data->descriptors_tx);
 	data->channels[XILINX_AXI_DMA_TX_CHANNEL_NUM].channel_regs =
 		cfg->reg + XILINX_AXI_DMA_MM2S_REG_OFFSET;
 	data->channels[XILINX_AXI_DMA_TX_CHANNEL_NUM].direction = MEMORY_TO_PERIPHERAL;
 
+	data->channels[XILINX_AXI_DMA_RX_CHANNEL_NUM].descriptors = data->descriptors_rx;
+	data->channels[XILINX_AXI_DMA_RX_CHANNEL_NUM].num_descriptors =
+		ARRAY_SIZE(data->descriptors_rx);
 	data->channels[XILINX_AXI_DMA_RX_CHANNEL_NUM].channel_regs =
 		cfg->reg + XILINX_AXI_DMA_S2MM_REG_OFFSET;
 	data->channels[XILINX_AXI_DMA_RX_CHANNEL_NUM].direction = PERIPHERAL_TO_MEMORY;
