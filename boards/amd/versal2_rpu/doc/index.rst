@@ -66,6 +66,13 @@ You should see the following message on the console:
    Hello World! versal2_rpu/amd_versal2_rpu
 
 
+Platform Management
+*******************
+
+For guidance on clock, reset and power management use case models on this
+processing unit (the RPU direct register access model and resource isolation),
+see :ref:`amd_platform_management`.
+
 References
 **********
 
