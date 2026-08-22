@@ -1,0 +1,14 @@
+# AMD/Xilinx TRNGPSX configuration
+
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+config ENTROPY_AMD_TRNGPSX
+	bool "AMD/Xilinx TRNGPSX HRNG entropy driver"
+	default y
+	depends on DT_HAS_XLNX_PMCL_TRNG_11_0_ENABLED
+	select ENTROPY_HAS_DRIVER
+	help
+	  This option enables the entropy driver for the AMD/Xilinx TRNGPSX
+	  True Random Number Generator operating in HRNG (Hybrid Random Number
+	  Generator) mode.
