@@ -1,0 +1,18 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  AMD/Xilinx TRNGPSX True Random Number Generator.
+
+  This binding describes the TRNGPSX IP operating in HRNG (Hybrid Random
+  Number Generator) mode: the ring-oscillator true-entropy source
+  continuously reseeds an internal DRBG and conditioned 256-bit random
+  blocks are read from the core output register. No external seed is used.
+
+compatible: "xlnx,pmcl-trng-11.0"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true
