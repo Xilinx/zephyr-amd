@@ -42,6 +42,24 @@ config DMA_XILINX_AXI_DMA_DISABLE_CACHE_WHEN_ACCESSING_SG_DESCRIPTORS
 		cache maintenance for both descriptors and buffers, not only
 		scatter-gather descriptors.
 
+config DMA_XILINX_AXI_DMA_SG_DESCRIPTOR_NUM_TX
+	int "Number of transfer descriptors allocated for transmission (TX)."
+	depends on DMA_XILINX_AXI_DMA
+	default 16
+	help
+		The Xilinx AXI DMA uses a ring of in-memory DMA descriptors which reference
+		the buffers containing the network packets and control and status information.
+		Increasing the number of descriptors increases the amount of packets in flight,
+		which benefits performance, while increasing memory usage.
+
+config DMA_XILINX_AXI_DMA_SG_DESCRIPTOR_NUM_RX
+	int "Number of transfer descriptors allocated for reception (RX)."
+	depends on DMA_XILINX_AXI_DMA
+	default 16
+	help
+		The AXI DMA driver currently allocates a single DMA descriptor for each RX transfer,
+		because transfers need to be started by the upstream driver.
+
 choice
 	prompt "IRQs to lock when manipulating per-channel data structures during dma_start."
 	depends on DMA_XILINX_AXI_DMA

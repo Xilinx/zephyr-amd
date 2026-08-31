@@ -146,7 +146,7 @@ ADI Platforms:
     - drivers/dac/dac_ltc*
     - drivers/ethernet/eth_adin*
     - drivers/ethernet/phy/phy_adin*
-    - drivers/mdio/mdio_adin*
+    - drivers/ethernet/mdio/mdio_adin*
     - drivers/sensor/adi/
     - drivers/stepper/adi_tmc/
     - dts/arm/adi/
@@ -1922,11 +1922,11 @@ Documentation Infrastructure:
     - decsny
   files:
     - doc/hardware/peripherals/mdio.rst
-    - drivers/mdio/
+    - drivers/ethernet/mdio/
     - include/zephyr/drivers/mdio.h
     - include/zephyr/net/mdio.h
     - tests/drivers/build_all/mdio/
-    - dts/bindings/mdio/
+    - dts/bindings/ethernet/mdio/
   labels:
     - "area: MDIO"
   tests:

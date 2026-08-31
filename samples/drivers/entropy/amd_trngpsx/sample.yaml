@@ -1,0 +1,18 @@
+sample:
+  name: AMD/Xilinx TRNGPSX HRNG entropy
+  description: Read random data from the AMD/Xilinx TRNGPSX (HRNG mode) entropy
+    driver and print it.
+common:
+  tags:
+    - entropy
+    - rng
+  depends_on: entropy
+  harness: console
+  harness_config:
+    type: multi_line
+    regex:
+      - "entropy device ready"
+      - "random bytes:"
+tests:
+  sample.drivers.entropy.amd_trngpsx:
+    filter: dt_chosen_enabled("zephyr,entropy")
