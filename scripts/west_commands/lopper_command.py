@@ -279,11 +279,11 @@ class LopperCommand(WestCommand):
         parser.add_argument(
             "-o", "--board_overlay",
             help=(
-                "optional path to a board .dts/.dtsi overlay file; when set, this "
-                "file is passed as the board_dt argument to gen_domain_dts (takes "
-                "priority over SDT-folder discovery). When omitted, the SDT folder "
-                "(parent directory of -s system-top.dts) is passed as board_dt and "
-                "Lopper discovers board/user DTSI files automatically"
+                "optional path to a board .dts/.dtsi overlay file. When set, "
+                "this file is the second argument to zephyr_domain_dts and "
+                "takes priority over SDT-folder discovery. When omitted, the "
+                "SDT folder (parent of -s system-top.dts) is passed as that "
+                "second argument so Lopper can discover board/user DTSI files"
             ),
         )
         parser.add_argument(
@@ -574,12 +574,11 @@ class LopperCommand(WestCommand):
 
         lops_file = self._lop_path(lops_dir, "lop-microblaze-riscv.dts")
         lops_file_intc = self._lop_path(lops_dir, "lop-mbv-zephyr-intc.dts")
+        board_arg = f" {zephyr_board_dts}" if zephyr_board_dts else ""
 
-        # Run lopper commands
         commands = [
-            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
-            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-zephyr.dts -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}",
-            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file_intc} {workspace}/system-zephyr.dts {workspace}/mbv32.dts"
+            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {sdt} {workspace}/preflight.dts",
+            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file_intc} {sdt} {workspace}/mbv32.dts -- zephyr_domain_dts {proc}{board_arg}",
         ]
 
         for cmd in commands:
@@ -601,8 +600,6 @@ class LopperCommand(WestCommand):
         """Process Cortex-R52 processor."""
         logger.info("Processing Cortex-R52 processor")
 
-        lops_file = self._lop_path(lops_dir, "lop-r52-imux.dts")
-
         if "psx_cortexr52" in proc:
             workspace_dts = Path(ws_dir) / "boards" / "amd" / "versalnet_rpu" / "versalnet_rpu.dts"
             workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versalnet_rpu" / "versalnet_rpu.overlay"
@@ -610,11 +607,12 @@ class LopperCommand(WestCommand):
             workspace_dts = Path(ws_dir) / "boards" / "amd" / "versal2_rpu" / "versal2_rpu.dts"
             workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versal2_rpu" / "versal2_rpu.overlay"
 
-        # Run lopper commands
+        lops_file = self._lop_path(lops_dir, "lop-r52-imux.dts")
+        board_arg = f" {zephyr_board_dts}" if zephyr_board_dts else ""
+
         commands = [
-            f"{lopper_cmd} -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
-            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
-            f"{lopper_cmd} -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}"
+            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {sdt} {workspace}/system-imux.dts",
+            f"{lopper_cmd} -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- zephyr_domain_dts {proc}{board_arg}",
         ]
 
         for cmd in commands:
@@ -635,15 +633,14 @@ class LopperCommand(WestCommand):
         """Process Cortex-A72 processor."""
         logger.info("Processing Cortex-A72 processor")
 
-        lops_file = self._lop_path(lops_dir, "lop-a72-imux.dts")
         workspace_dts = Path(ws_dir) / "boards" / "amd" / "versal_apu" / "versal_apu.dts"
         workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versal_apu" / "versal_apu.overlay"
+        lops_file = self._lop_path(lops_dir, "lop-a72-imux.dts")
+        board_arg = f" {zephyr_board_dts}" if zephyr_board_dts else ""
 
-        # Run lopper commands
         commands = [
-            f"{lopper_cmd} -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
-            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
-            f"{lopper_cmd} -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}"
+            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {sdt} {workspace}/system-imux.dts",
+            f"{lopper_cmd} -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- zephyr_domain_dts {proc}{board_arg}",
         ]
 
         for cmd in commands:
@@ -664,15 +661,14 @@ class LopperCommand(WestCommand):
         """Process Cortex-A53 processor."""
         logger.info("Processing Cortex-A53 processor")
 
-        lops_file = self._lop_path(lops_dir, "lop-a53-imux.dts")
         workspace_dts = Path(ws_dir) / "boards" / "amd" / "zynqmp_apu" / "zynqmp_apu.dts"
         workspace_overlay = Path(ws_dir) / "boards" / "amd" / "zynqmp_apu" / "zynqmp_apu.overlay"
+        lops_file = self._lop_path(lops_dir, "lop-a53-imux.dts")
+        board_arg = f" {zephyr_board_dts}" if zephyr_board_dts else ""
 
-        # Run lopper commands
         commands = [
-            f"{lopper_cmd} -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
-            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
-            f"{lopper_cmd} -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}"
+            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {sdt} {workspace}/system-imux.dts",
+            f"{lopper_cmd} -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- zephyr_domain_dts {proc}{board_arg}",
         ]
 
         for cmd in commands:
@@ -693,8 +689,6 @@ class LopperCommand(WestCommand):
         """Process Cortex-R5 processor."""
         logger.info("Processing Cortex-R5 processor")
 
-        lops_file = self._lop_path(lops_dir, "lop-r5-imux.dts")
-
         if "psu_cortexr5" in proc:
             workspace_dts = Path(ws_dir) / "boards" / "amd" / "zynqmp_rpu" / "zynqmp_rpu.dts"
             workspace_overlay = Path(ws_dir) / "boards" / "amd" / "zynqmp_rpu" / "zynqmp_rpu.overlay"
@@ -702,11 +696,12 @@ class LopperCommand(WestCommand):
             workspace_dts = Path(ws_dir) / "boards" / "amd" / "versal_rpu" / "versal_rpu.dts"
             workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versal_rpu" / "versal_rpu.overlay"
 
-        # Run lopper commands
+        lops_file = self._lop_path(lops_dir, "lop-r5-imux.dts")
+        board_arg = f" {zephyr_board_dts}" if zephyr_board_dts else ""
+
         commands = [
-            f"{lopper_cmd} -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
-            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
-            f"{lopper_cmd} -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}"
+            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {sdt} {workspace}/system-imux.dts",
+            f"{lopper_cmd} -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- zephyr_domain_dts {proc}{board_arg}",
         ]
 
         for cmd in commands:
@@ -727,8 +722,6 @@ class LopperCommand(WestCommand):
         """Process Cortex-A78 processor."""
         logger.info("Processing Cortex-A78 processor")
 
-        lops_file = self._lop_path(lops_dir, "lop-a78-imux.dts")
-
         if "psx_cortexa78" in proc:
             workspace_dts = Path(ws_dir) / "boards" / "amd" / "versalnet_apu" / "versalnet_apu.dts"
             workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versalnet_apu" / "versalnet_apu.overlay"
@@ -736,11 +729,12 @@ class LopperCommand(WestCommand):
             workspace_dts = Path(ws_dir) / "boards" / "amd" / "versal2_apu" / "versal2_apu.dts"
             workspace_overlay = Path(ws_dir) / "boards" / "amd" / "versal2_apu" / "versal2_apu.overlay"
 
-        # Run lopper commands
+        lops_file = self._lop_path(lops_dir, "lop-a78-imux.dts")
+        board_arg = f" {zephyr_board_dts}" if zephyr_board_dts else ""
+
         commands = [
-            f"{lopper_cmd} -f --enhanced -O {workspace} {sdt} {workspace}/system-domain.dts -- gen_domain_dts {proc}",
-            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {workspace}/system-domain.dts {workspace}/system-imux.dts",
-            f"{lopper_cmd} -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- gen_domain_dts {proc} zephyr_dt {zephyr_board_dts}"
+            f"{lopper_cmd} -f --enhanced -O {workspace} -i {lops_file} {sdt} {workspace}/system-imux.dts",
+            f"{lopper_cmd} -f --enhanced -O {workspace} {workspace}/system-imux.dts {workspace_dts} -- zephyr_domain_dts {proc}{board_arg}",
         ]
 
         for cmd in commands:
@@ -1044,7 +1038,7 @@ class LopperCommand(WestCommand):
 
             workspace = self._setup_workspace(str(ws_dir))
 
-            # board_dt argument to gen_domain_dts (zephyr_board_dts):
+            # board overlay argument to zephyr_domain_dts (zephyr_board_dts):
             #   -o set  -> explicit overlay .dts/.dtsi file (priority)
             #   -o omit -> SDT folder (parent of -s); Lopper discovers DTSI files
             if args.board_overlay:
@@ -1053,12 +1047,12 @@ class LopperCommand(WestCommand):
                     logger.error(f"Board overlay file not found: {zephyr_board_dts}")
                     sys.exit(1)
                 logger.info(
-                    f"Using -o overlay file as board_dt for gen_domain_dts: {zephyr_board_dts}"
+                    f"Using -o overlay file for zephyr_domain_dts: {zephyr_board_dts}"
                 )
             else:
                 zephyr_board_dts = sdt.parent
                 logger.info(
-                    f"Using SDT folder as board_dt for gen_domain_dts: {zephyr_board_dts}"
+                    f"Using SDT folder for zephyr_domain_dts: {zephyr_board_dts}"
                 )
 
             logger.info(f"Validating processor: {proc}")
