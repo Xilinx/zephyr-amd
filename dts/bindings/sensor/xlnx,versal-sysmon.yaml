@@ -16,8 +16,6 @@ properties:
     required: true
     description: |
       Number of supply channels enabled in the design.
-    min: 0
-    max: 62
 
 child-binding:
   description: SysMon supply channel node
