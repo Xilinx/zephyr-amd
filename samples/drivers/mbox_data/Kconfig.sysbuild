@@ -20,3 +20,4 @@ string
 	default "imx943_evk/mimx94398/m7_1" if "$(BOARD)$(BOARD_QUALIFIERS)" = "imx943_evk/mimx94398/m33"
 	default "versalnet_rpu" if SOC_AMD_VERSALNET_RPU
 	default "versal2_rpu" if SOC_AMD_VERSAL2_RPU
+	default "mbv32" if SOC_MBV32
