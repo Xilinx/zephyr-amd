@@ -18,6 +18,11 @@ The sample targets CLKOUT0 of the first AXI Clocking Wizard instance
 (``clk_wiz_0`` at ``0xb2000000``) and steps through a set of target
 frequencies: 100 MHz, 200 MHz, and 300 MHz.
 
+When another CLKOUT is active, ``clock_control_set_rate`` preserves the
+shared MMCM VCO and changes only the selected output divider. The requested
+rate must be exactly representable by the current VCO; otherwise the call
+fails without changing the MMCM configuration.
+
 Hardware Requirements
 *********************
 
@@ -31,7 +36,7 @@ Building and Running
 
 .. code-block:: bash
 
-   west build -b versal2_apu samples/drivers/xclk_wiz
+   west build -b versal2_apu samples/boards/amd/xclk_wiz
    west flash   # or load via XSDB / JTAG
 
 Sample Output
@@ -57,8 +62,9 @@ Configuration
 - A ``misc_clk_0`` fixed-clock node (100 MHz reference)
 - A ``clk_wiz_0`` clock-controller node at ``0xb2000000``
 
-Adjust ``xlnx,prim-in-freq`` and ``xlnx,num-out-clks`` in the overlay to
-match your specific board design.
+Adjust ``xlnx,num-out-clks`` in the overlay to match the number of outputs
+configured in your board design. The parent clock's declared rate must match
+the Clocking Wizard's hardware reference-clock frequency.
 
 Related Files
 *************
