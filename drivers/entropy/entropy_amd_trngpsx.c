@@ -255,18 +255,24 @@ static int trngpsx_reseed(const struct device *dev)
 
 static int trngpsx_get_entropy_internal(const struct device *dev, uint8_t *buffer, uint16_t length)
 {
-	int ret = trngpsx_collect_random_data(dev, buffer, length, TRNGPSX_GENERATE_TIMEOUT_US);
+	int ret_collect;
+	int ret_reseed;
 
-	if (ret < 0) {
-		LOG_ERR("failed to collect random data (%d)", ret);
+	ret_collect = trngpsx_collect_random_data(dev, buffer, length,
+						  TRNGPSX_GENERATE_TIMEOUT_US);
+	if (ret_collect < 0) {
+		LOG_ERR("failed to collect random data (%d)", ret_collect);
+		for (uint16_t i = 0U; i < length; i++) {
+			((volatile uint8_t *)buffer)[i] = 0U;
+		}
 	}
 
-	ret = trngpsx_reseed(dev);
-	if (ret < 0) {
-		LOG_ERR("post-generate reseed failed (%d)", ret);
+	ret_reseed = trngpsx_reseed(dev);
+	if (ret_reseed < 0) {
+		LOG_ERR("post-generate reseed failed (%d)", ret_reseed);
 	}
 
-	return ret;
+	return (ret_collect < 0) ? ret_collect : ret_reseed;
 }
 
 static int trngpsx_get_entropy(const struct device *dev, uint8_t *buffer, uint16_t length)
