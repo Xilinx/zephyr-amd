@@ -87,7 +87,9 @@ struct trngpsx_config {
 };
 
 struct trngpsx_data {
+	struct k_mutex mutex;
 	struct k_spinlock lock;
+	bool thread_active;
 };
 
 static inline uint32_t trngpsx_read(const struct device *dev, uint32_t off)
@@ -114,13 +116,31 @@ static inline void trngpsx_rmw(const struct device *dev, uint32_t off, uint32_t 
 }
 
 static int trngpsx_wait_for_event(const struct device *dev, uint32_t off, uint32_t mask,
-				  uint32_t expected, uint32_t timeout_us)
+				  uint32_t expected, uint32_t timeout_us, bool may_sleep)
 {
-	if (WAIT_FOR((trngpsx_read(dev, off) & mask) == expected, timeout_us, k_busy_wait(1))) {
-		return 0;
+	bool ready;
+
+	/*
+	 * Thread callers yield so other threads can run and so this poll does
+	 * not pin the CPU. ISR / PRE_KERNEL paths must busy-wait.
+	 */
+	if (may_sleep) {
+		ready = WAIT_FOR((trngpsx_read(dev, off) & mask) == expected, timeout_us,
+				 k_yield());
+	} else {
+		ready = WAIT_FOR((trngpsx_read(dev, off) & mask) == expected, timeout_us,
+				 k_busy_wait(1));
 	}
 
-	return -ETIMEDOUT;
+	return ready ? 0 : -ETIMEDOUT;
+}
+
+static void trngpsx_set_thread_active(struct trngpsx_data *data, bool active)
+{
+	k_spinlock_key_t key = k_spin_lock(&data->lock);
+
+	data->thread_active = active;
+	k_spin_unlock(&data->lock, key);
 }
 
 /* Bring the TRNG core and the PRNG unit out of reset. */
@@ -136,14 +156,15 @@ static void trngpsx_core_reset(const struct device *dev)
 }
 
 /* Read one 256-bit block (two 128-bit bursts) from the output queue. */
-static int trngpsx_read_block(const struct device *dev, uint8_t *block, uint32_t timeout_us)
+static int trngpsx_read_block(const struct device *dev, uint8_t *block, uint32_t timeout_us,
+			      bool may_sleep)
 {
 	int ret;
 
 	for (uint32_t burst = 0U; burst < TRNGPSX_BURSTS; burst++) {
 		ret = trngpsx_wait_for_event(dev, TRNG_STATUS, TRNG_STATUS_QCNT_MASK,
 					     TRNGPSX_QCNT_READY << TRNG_STATUS_QCNT_SHIFT,
-					     timeout_us);
+					     timeout_us, may_sleep);
 		if (ret < 0) {
 			return ret;
 		}
@@ -178,7 +199,7 @@ static void trngpsx_scrub_block(uint8_t *block)
  * pattern (PRNGSTART once per request, clear PRNGMODE/PRNGSTART at end).
  */
 static int trngpsx_collect_random_data(const struct device *dev, uint8_t *buffer, uint16_t length,
-				       uint32_t timeout_us)
+				       uint32_t timeout_us, bool may_sleep)
 {
 	uint8_t block[TRNGPSX_BLOCK_BYTES];
 	int ret = 0;
@@ -193,7 +214,7 @@ static int trngpsx_collect_random_data(const struct device *dev, uint8_t *buffer
 	while (length > 0U) {
 		uint16_t chunk = MIN(length, (uint16_t)sizeof(block));
 
-		ret = trngpsx_read_block(dev, block, timeout_us);
+		ret = trngpsx_read_block(dev, block, timeout_us, may_sleep);
 		if (ret < 0) {
 			break;
 		}
@@ -211,7 +232,7 @@ static int trngpsx_collect_random_data(const struct device *dev, uint8_t *buffer
 }
 
 /* Reseed the DRBG from the true-entropy source (HRNG, blocking). */
-static int trngpsx_reseed(const struct device *dev)
+static int trngpsx_reseed(const struct device *dev, bool may_sleep)
 {
 	int ret;
 
@@ -234,8 +255,8 @@ static int trngpsx_reseed(const struct device *dev)
 	/* Kick off the reseed. */
 	trngpsx_rmw(dev, TRNG_CTRL, TRNG_CTRL_PRNGSTART_MASK, TRNG_CTRL_PRNGSTART_MASK);
 
-	ret = trngpsx_wait_for_event(dev, TRNG_STATUS, TRNG_STATUS_DONE_MASK,
-				     TRNG_STATUS_DONE_MASK, TRNGPSX_RESEED_TIMEOUT_US);
+	ret = trngpsx_wait_for_event(dev, TRNG_STATUS, TRNG_STATUS_DONE_MASK, TRNG_STATUS_DONE_MASK,
+				     TRNGPSX_RESEED_TIMEOUT_US, may_sleep);
 	if (ret < 0) {
 		LOG_ERR("timeout waiting for reseed done");
 		return ret;
@@ -253,13 +274,14 @@ static int trngpsx_reseed(const struct device *dev)
 	return 0;
 }
 
-static int trngpsx_get_entropy_internal(const struct device *dev, uint8_t *buffer, uint16_t length)
+static int trngpsx_get_entropy_internal(const struct device *dev, uint8_t *buffer, uint16_t length,
+					bool may_sleep)
 {
 	int ret_collect;
 	int ret_reseed;
 
-	ret_collect = trngpsx_collect_random_data(dev, buffer, length,
-						  TRNGPSX_GENERATE_TIMEOUT_US);
+	ret_collect = trngpsx_collect_random_data(dev, buffer, length, TRNGPSX_GENERATE_TIMEOUT_US,
+						  may_sleep);
 	if (ret_collect < 0) {
 		LOG_ERR("failed to collect random data (%d)", ret_collect);
 		for (uint16_t i = 0U; i < length; i++) {
@@ -267,7 +289,7 @@ static int trngpsx_get_entropy_internal(const struct device *dev, uint8_t *buffe
 		}
 	}
 
-	ret_reseed = trngpsx_reseed(dev);
+	ret_reseed = trngpsx_reseed(dev, may_sleep);
 	if (ret_reseed < 0) {
 		LOG_ERR("post-generate reseed failed (%d)", ret_reseed);
 	}
@@ -278,18 +300,18 @@ static int trngpsx_get_entropy_internal(const struct device *dev, uint8_t *buffe
 static int trngpsx_get_entropy(const struct device *dev, uint8_t *buffer, uint16_t length)
 {
 	struct trngpsx_data *data = dev->data;
-	k_spinlock_key_t key;
 	int ret;
 
 	/*
-	 * A single per-device spinlock serializes the whole hardware sequence
-	 * (PRNG start + burst reads) against both other threads and the ISR
-	 * path, and is SMP-correct. The generate loop only polls registers, so
-	 * holding the lock is bounded by the hardware timeout.
+	 * Mutex serializes full generate+reseed between threads without
+	 * masking interrupts. thread_active (under a short spinlock) makes
+	 * the ISR path return -ENODATA instead of touching the core mid-session.
 	 */
-	key = k_spin_lock(&data->lock);
-	ret = trngpsx_get_entropy_internal(dev, buffer, length);
-	k_spin_unlock(&data->lock, key);
+	k_mutex_lock(&data->mutex, K_FOREVER);
+	trngpsx_set_thread_active(data, true);
+	ret = trngpsx_get_entropy_internal(dev, buffer, length, true);
+	trngpsx_set_thread_active(data, false);
+	k_mutex_unlock(&data->mutex);
 
 	return ret;
 }
@@ -308,16 +330,20 @@ static int trngpsx_get_entropy_isr(const struct device *dev, uint8_t *buffer, ui
 	 * ISR path must be bounded: never arm/disarm, reseed, or start the
 	 * hardware here — only drain bytes already queued. With ENTROPY_BUSYWAIT
 	 * we allow a small per-burst wait; otherwise we poll with essentially
-	 * no wait.
+	 * no wait. If a thread transaction is in progress, do not interleave.
 	 */
 	timeout_us = (flags & ENTROPY_BUSYWAIT) ? TRNGPSX_ISR_BURST_TIMEOUT_US : 0U;
 
 	key = k_spin_lock(&data->lock);
+	if (data->thread_active) {
+		k_spin_unlock(&data->lock, key);
+		return -ENODATA;
+	}
 
 	while (produced < length) {
 		uint16_t chunk = MIN((uint16_t)(length - produced), (uint16_t)sizeof(block));
 
-		ret = trngpsx_read_block(dev, block, timeout_us);
+		ret = trngpsx_read_block(dev, block, timeout_us, false);
 		if (ret < 0) {
 			break;
 		}
@@ -335,13 +361,21 @@ static int trngpsx_get_entropy_isr(const struct device *dev, uint8_t *buffer, ui
 static int trngpsx_init(const struct device *dev)
 {
 	const struct trngpsx_config *cfg = dev->config;
+	struct trngpsx_data *data = dev->data;
 	int ret;
+
+	k_mutex_init(&data->mutex);
 
 	/* Bring TRNG core and PRNG unit out of reset. */
 	trngpsx_core_reset(dev);
 
-	/* Initial reseed from the true-entropy source to make the DRBG ready. */
-	ret = trngpsx_reseed(dev);
+	/*
+	 * Initial reseed from the true-entropy source to make the DRBG ready.
+	 * PRE_KERNEL init cannot sleep, so busy-wait here.
+	 */
+	trngpsx_set_thread_active(data, true);
+	ret = trngpsx_reseed(dev, false);
+	trngpsx_set_thread_active(data, false);
 	if (ret < 0) {
 		LOG_ERR("initial reseed failed (%d)", ret);
 		return ret;
