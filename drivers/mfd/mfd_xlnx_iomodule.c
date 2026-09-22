@@ -51,6 +51,7 @@ LOG_MODULE_REGISTER(mfd_xlnx_iomodule, CONFIG_MFD_LOG_LEVEL);
 #define IOMODULE_IRQ_EXTERNAL_MASK GENMASK(31, 16) /* External IRQs */
 
 #define IOMODULE_MAX_PITS 4
+#define IOMODULE_MAX_GPI  4
 
 struct xlnx_iomodule_child {
 	const struct device *dev;
@@ -60,6 +61,7 @@ struct xlnx_iomodule_child {
 struct xlnx_iomodule_data {
 	struct xlnx_iomodule_child children[XLNX_IOMODULE_PERIPH_COUNT];
 	struct xlnx_iomodule_child pit_children[IOMODULE_MAX_PITS];
+	struct xlnx_iomodule_child gpi_children[IOMODULE_MAX_GPI];
 	/*
 	 * Software shadow of the IER register.
 	 * The IOModule IER is write-only (reads return 0), so we must
@@ -135,11 +137,14 @@ static void xlnx_iomodule_isr(const struct device *dev)
 		}
 	}
 
-	/* Dispatch GPI interrupts */
+	/* Dispatch GPI interrupts (per-port) */
 	if ((pending & IOMODULE_IRQ_GPI_MASK) != 0) {
-		child = &data->children[XLNX_IOMODULE_PERIPH_GPI];
-		if (child->handler != NULL) {
-			child->handler(child->dev);
+		for (int i = 0; i < IOMODULE_MAX_GPI; i++) {
+			if ((pending & BIT(11 + i)) != 0 &&
+			    data->gpi_children[i].handler != NULL) {
+				data->gpi_children[i].handler(
+						data->gpi_children[i].dev);
+			}
 		}
 	}
 
@@ -190,6 +195,22 @@ void xlnx_iomodule_set_pit_irq_handler(const struct device *dev,
 	data->pit_children[pit_id].handler = handler;
 
 	LOG_DBG("Registered PIT%d handler, child %s", pit_id, child_dev->name);
+}
+
+void xlnx_iomodule_set_gpi_irq_handler(const struct device *dev,
+				       const struct device *child_dev,
+				       uint32_t gpi_id,
+				       xlnx_iomodule_irq_handler_t handler)
+{
+	struct xlnx_iomodule_data *data = dev->data;
+
+	__ASSERT(gpi_id < IOMODULE_MAX_GPI,
+		 "Invalid GPI id %d", gpi_id);
+
+	data->gpi_children[gpi_id].dev = child_dev;
+	data->gpi_children[gpi_id].handler = handler;
+
+	LOG_DBG("Registered GPI%d handler, child %s", gpi_id, child_dev->name);
 }
 
 mm_reg_t xlnx_iomodule_get_base_addr(const struct device *dev)

@@ -68,6 +68,24 @@ void xlnx_iomodule_set_pit_irq_handler(const struct device *dev,
 					xlnx_iomodule_irq_handler_t handler);
 
 /**
+ * @brief Register an IRQ handler for a specific GPI instance
+ *
+ * Unlike other peripherals that share a single handler slot per type,
+ * each of the 4 GPI ports has its own handler slot. The MFD parent checks
+ * individual GPI interrupt bits (IER/IPR bits 11-14) and dispatches to the
+ * correct handler, acknowledging that port's bit only.
+ *
+ * @param dev       IOModule MFD parent device
+ * @param child_dev GPI child device to pass to handler
+ * @param gpi_id    GPI instance number (0-3)
+ * @param handler   ISR function to call when this GPI port fires
+ */
+void xlnx_iomodule_set_gpi_irq_handler(const struct device *dev,
+				       const struct device *child_dev,
+				       uint32_t gpi_id,
+				       xlnx_iomodule_irq_handler_t handler);
+
+/**
  * @brief Get the base address of the IOModule
  *
  * Child drivers use this to access their specific register offsets
@@ -127,8 +145,8 @@ uint32_t xlnx_iomodule_irq_get_enabled(const struct device *dev);
  *   PIT_CONTROL(n) (0x48 + n*0x10): Control register
  *
  * GPI/GPO Registers (n = 1..4):
- *   GPI(n) (0x10 + (n-1)*4): General Purpose Input n
  *   GPO(n) (0x10 + (n-1)*4): General Purpose Output n
+ *   GPI(n) (0x20 + (n-1)*4): General Purpose Input n
  */
 #define IOMODULE_REG_ISR        0x30
 #define IOMODULE_REG_IPR        0x34
@@ -140,8 +158,8 @@ uint32_t xlnx_iomodule_irq_get_enabled(const struct device *dev);
 #define IOMODULE_REG_UART_STAT  0x08
 #define IOMODULE_REG_UART_BAUD  0x4C
 
-#define IOMODULE_REG_GPI(n)     (0x10 + ((n) - 1) * 4)  /* n = 1..4 */
 #define IOMODULE_REG_GPO(n)     (0x10 + ((n) - 1) * 4)  /* n = 1..4 */
+#define IOMODULE_REG_GPI(n)     (0x20 + ((n) - 1) * 4)  /* n = 1..4 */
 
 #define IOMODULE_REG_PIT_PRELOAD(n)  (0x40 + (n) * 0x10)  /* n = 0..3 */
 #define IOMODULE_REG_PIT_COUNTER(n)  (0x44 + (n) * 0x10)  /* n = 0..3 */
