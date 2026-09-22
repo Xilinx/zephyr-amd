@@ -155,6 +155,21 @@ static void trngpsx_core_reset(const struct device *dev)
 	trngpsx_rmw(dev, TRNG_CTRL, TRNG_CTRL_PRNGSRST_MASK, 0U);
 }
 
+/* Volatile stores so the compiler cannot elide the wipe as a dead store. */
+static void trngpsx_secure_memzero(void *p, size_t len)
+{
+	volatile uint8_t *v = p;
+
+	for (size_t i = 0U; i < len; i++) {
+		v[i] = 0U;
+	}
+}
+
+static void trngpsx_scrub_block(uint8_t *block)
+{
+	trngpsx_secure_memzero(block, TRNGPSX_BLOCK_BYTES);
+}
+
 /* Read one 256-bit block (two 128-bit bursts) from the output queue. */
 static int trngpsx_read_block(const struct device *dev, uint8_t *block, uint32_t timeout_us,
 			      bool may_sleep)
@@ -166,12 +181,14 @@ static int trngpsx_read_block(const struct device *dev, uint8_t *block, uint32_t
 					     TRNGPSX_QCNT_READY << TRNG_STATUS_QCNT_SHIFT,
 					     timeout_us, may_sleep);
 		if (ret < 0) {
+			trngpsx_scrub_block(block);
 			return ret;
 		}
 
 		/* Deterministic test failure -> catastrophic, data is unusable. */
 		if ((trngpsx_read(dev, TRNG_STATUS) & TRNG_STATUS_DTF_MASK) != 0U) {
 			LOG_ERR("deterministic test failure (DTF)");
+			trngpsx_scrub_block(block);
 			return -EIO;
 		}
 
@@ -184,13 +201,6 @@ static int trngpsx_read_block(const struct device *dev, uint8_t *block, uint32_t
 	}
 
 	return 0;
-}
-
-static void trngpsx_scrub_block(uint8_t *block)
-{
-	for (size_t i = 0U; i < TRNGPSX_BLOCK_BYTES; i++) {
-		((volatile uint8_t *)block)[i] = 0U;
-	}
 }
 
 /*
@@ -216,6 +226,7 @@ static int trngpsx_collect_random_data(const struct device *dev, uint8_t *buffer
 
 		ret = trngpsx_read_block(dev, block, timeout_us, may_sleep);
 		if (ret < 0) {
+			trngpsx_scrub_block(block);
 			break;
 		}
 
@@ -284,9 +295,7 @@ static int trngpsx_get_entropy_internal(const struct device *dev, uint8_t *buffe
 						  may_sleep);
 	if (ret_collect < 0) {
 		LOG_ERR("failed to collect random data (%d)", ret_collect);
-		for (uint16_t i = 0U; i < length; i++) {
-			((volatile uint8_t *)buffer)[i] = 0U;
-		}
+		trngpsx_secure_memzero(buffer, length);
 	}
 
 	ret_reseed = trngpsx_reseed(dev, may_sleep);
@@ -345,6 +354,7 @@ static int trngpsx_get_entropy_isr(const struct device *dev, uint8_t *buffer, ui
 
 		ret = trngpsx_read_block(dev, block, timeout_us, false);
 		if (ret < 0) {
+			trngpsx_scrub_block(block);
 			break;
 		}
 
