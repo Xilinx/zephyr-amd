@@ -1,0 +1,71 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Xilinx IOModule GPI or GPO port (child of IOModule MFD).
+
+compatible: "xlnx,iomodule-gpio"
+
+include: [gpio-controller.yaml, base.yaml]
+
+properties:
+  xlnx,gpio-port:
+    type: int
+    required: true
+    enum: [1, 2, 3, 4]
+    description: |
+      IOModule GPIO port index (1-4), corresponding to the
+      General Purpose Input (GPI) or General Purpose Output (GPO)
+      instance configured in hardware.
+
+  xlnx,gpio-direction:
+    type: string
+    required: true
+    enum:
+      - input
+      - output
+    description: |
+      Fixed hardware direction of the port as configured in the
+      IOModule IP. "input" corresponds to a GPI port and "output"
+      corresponds to a GPO port. Direction cannot be changed at
+      runtime.
+
+  ngpios:
+    type: int
+    required: true
+    description: |
+      Number of GPIO signals implemented by this port, corresponding
+      to the "Number of Bits" setting in the IOModule IP
+      configuration.
+
+  xlnx,gpio-init:
+    type: int
+    description: |
+      Initial output value configured for a GPO (output) port,
+      corresponding to the "Initial Value of GPO" setting in the
+      IOModule IP configuration. Ignored for GPI (input) ports.
+
+  xlnx,gpio-interrupt-type:
+    type: int
+    enum:
+      - 0
+      - 1
+      - 2
+      - 3
+    description: |
+      Fixed GPI edge-interrupt capability, as configured in Vivado. IOModule
+      GPI edge detection is fixed in hardware and is not software
+      configurable, so a request for an edge trigger the hardware isn't
+      wired to detect must be rejected by the driver:
+        0 = no interrupt capability (default)
+        1 = both rising and falling edges
+        2 = rising edge only
+        3 = falling edge only
+      Ignored for GPO (output) ports.
+
+  "#gpio-cells":
+    const: 2
+
+gpio-cells:
+  - pin
+  - flags
