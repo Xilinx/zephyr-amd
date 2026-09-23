@@ -1360,12 +1360,13 @@ static void eth_xlnx_gem_configure_buffers(const struct device *dev)
 		    dev_conf->base_addr + ETH_XLNX_GEM_TX1QBASEL_OFFSET);
 #endif /* CONFIG_SOC_XILINX_ZYNQMP */
 
-#ifdef CONFIG_SOC_AMD_VERSAL2
+/* Versal: Set queue-1 disable (bit 0) in RX/TX *_q1_ptr registers. */
+#if defined(CONFIG_SOC_AMD_VERSAL2) || defined(CONFIG_SOC_AMD_VERSALNET)
 	sys_write32(ETH_XLNX_GEM_QUEUE_DISABLE_BIT,
 		    dev_conf->base_addr + ETH_XLNX_GEM_RX1QBASEL_OFFSET);
 	sys_write32(ETH_XLNX_GEM_QUEUE_DISABLE_BIT,
 		    dev_conf->base_addr + ETH_XLNX_GEM_TX1QBASEL_OFFSET);
-#endif /* CONFIG_SOC_AMD_VERSAL2 */
+#endif /* CONFIG_SOC_AMD_VERSAL2 || CONFIG_SOC_AMD_VERSALNET */
 }
 
 /**
