@@ -17,6 +17,7 @@ struct xlnx_clk_wiz_data {
 	DEVICE_MMIO_RAM;
 	uint64_t prim_in_freq_hz;
 	struct k_mutex lock;
+	struct k_spinlock reg_lock;
 };
 
 struct xlnx_clk_wiz_config {
@@ -77,6 +78,20 @@ static uint32_t clk_wiz_clkout_offset(uint32_t clk_id)
 		off = CLK_WIZ_REG19_OFFSET + (clk_id - 4U) * 8U;
 	}
 	return off;
+}
+
+static bool clk_wiz_has_active_sibling(mm_reg_t base, uint32_t clk_id,
+					       uint32_t num_out_clks)
+{
+	for (uint32_t index = 0U; index < num_out_clks; index++) {
+		if (index != clk_id &&
+		    (clk_wiz_rd(base, clk_wiz_clkout_offset(index)) &
+		     CLK_WIZ_REG3_USED)) {
+			return true;
+		}
+	}
+
+	return false;
 }
 
 static bool clk_wiz_update_best(uint64_t diff, uint64_t *best_diff,
@@ -353,6 +368,7 @@ static int xlnx_clk_wiz_on(const struct device *dev, clock_control_subsys_t sys)
 	mm_reg_t base = DEVICE_MMIO_GET(dev);
 	uint32_t clk_id = (uint32_t)(uintptr_t)sys;
 	uint32_t reg_off;
+	k_spinlock_key_t key;
 
 	if (clk_id >= cfg->num_out_clks || clk_id >= CLK_WIZ_MAX_OUTPUTS) {
 		LOG_ERR("Invalid clock ID %u (max %u)", clk_id,
@@ -360,10 +376,10 @@ static int xlnx_clk_wiz_on(const struct device *dev, clock_control_subsys_t sys)
 		return -EINVAL;
 	}
 
-	k_mutex_lock(&data->lock, K_FOREVER);
+	key = k_spin_lock(&data->reg_lock);
 	reg_off = clk_wiz_clkout_offset(clk_id);
 	clk_wiz_setbits(base, reg_off, CLK_WIZ_REG3_USED);
-	k_mutex_unlock(&data->lock);
+	k_spin_unlock(&data->reg_lock, key);
 
 	LOG_DBG("Clock %u enabled", clk_id);
 	return 0;
@@ -376,16 +392,17 @@ static int xlnx_clk_wiz_off(const struct device *dev, clock_control_subsys_t sys
 	mm_reg_t base = DEVICE_MMIO_GET(dev);
 	uint32_t clk_id = (uint32_t)(uintptr_t)sys;
 	uint32_t reg_off;
+	k_spinlock_key_t key;
 
 	if (clk_id >= cfg->num_out_clks || clk_id >= CLK_WIZ_MAX_OUTPUTS) {
 		LOG_ERR("Invalid clock ID %u", clk_id);
 		return -EINVAL;
 	}
 
-	k_mutex_lock(&data->lock, K_FOREVER);
+	key = k_spin_lock(&data->reg_lock);
 	reg_off = clk_wiz_clkout_offset(clk_id);
 	clk_wiz_clrbits(base, reg_off, CLK_WIZ_REG3_USED);
-	k_mutex_unlock(&data->lock);
+	k_spin_unlock(&data->reg_lock, key);
 
 	LOG_DBG("Clock %u disabled", clk_id);
 	return 0;
@@ -396,7 +413,7 @@ static int xlnx_clk_wiz_get_rate(const struct device *dev,
 				 uint32_t *rate)
 {
 	const struct xlnx_clk_wiz_config *cfg = dev->config;
-	const struct xlnx_clk_wiz_data *data = dev->data;
+	struct xlnx_clk_wiz_data *data = dev->data;
 	mm_reg_t base = DEVICE_MMIO_GET(dev);
 	uint32_t clk_id = (uint32_t)(uintptr_t)sys;
 	uint32_t reg_off, reg;
@@ -408,8 +425,11 @@ static int xlnx_clk_wiz_get_rate(const struct device *dev,
 		return -EINVAL;
 	}
 
+	k_mutex_lock(&data->lock, K_FOREVER);
+
 	fvco = clk_wiz_get_vco(base, data->prim_in_freq_hz);
 	if (fvco == 0U) {
+		k_mutex_unlock(&data->lock);
 		return -EIO;
 	}
 
@@ -435,6 +455,8 @@ static int xlnx_clk_wiz_get_rate(const struct device *dev,
 
 	LOG_DBG("Clock %u rate: %u Hz (fvco=%llu div_o=%u)", clk_id, *rate,
 		(unsigned long long)fvco, div_o);
+
+	k_mutex_unlock(&data->lock);
 	return 0;
 }
 
@@ -448,6 +470,9 @@ static int xlnx_clk_wiz_set_rate(const struct device *dev,
 	uint32_t clk_id = (uint32_t)(uintptr_t)sys;
 	const uint32_t *rate_hz_ptr = (const uint32_t *)rate;
 	uint64_t target_hz;
+	uint64_t fvco;
+	uint32_t leaf_div;
+	k_spinlock_key_t key;
 	struct clk_wiz_divisors clk_divs = {0};
 	int ret;
 
@@ -475,7 +500,32 @@ static int xlnx_clk_wiz_set_rate(const struct device *dev,
 
 	k_mutex_lock(&data->lock, K_FOREVER);
 
+	if (clk_wiz_has_active_sibling(base, clk_id, cfg->num_out_clks)) {
+		fvco = clk_wiz_get_vco(base, data->prim_in_freq_hz);
+		leaf_div = (uint32_t)(fvco / target_hz);
+
+		if (fvco == 0U || leaf_div < CLK_WIZ_O_MIN ||
+		    leaf_div > CLK_WIZ_O_MAX || fvco / leaf_div != target_hz) {
+			LOG_ERR("Clock %u rate %llu cannot be generated from current VCO",
+				clk_id, (unsigned long long)target_hz);
+			k_mutex_unlock(&data->lock);
+			return -EINVAL;
+		}
+
+		key = k_spin_lock(&data->reg_lock);
+		clk_wiz_update_o(base, clk_id, leaf_div);
+		k_spin_unlock(&data->reg_lock, key);
+		clk_wiz_wr(base, CLK_WIZ_RECONFIG_OFFSET,
+			   (CLK_WIZ_RECONFIG_SADDR | CLK_WIZ_RECONFIG_LOAD));
+		ret = clk_wiz_wait_lock(base);
+
+		k_mutex_unlock(&data->lock);
+		return ret;
+	}
+
+	key = k_spin_lock(&data->reg_lock);
 	clk_wiz_update_o(base, clk_id, clk_divs.o);
+	k_spin_unlock(&data->reg_lock, key);
 
 	clk_wiz_update_d(base, clk_divs.d);
 	clk_wiz_update_m(base, clk_divs.m);

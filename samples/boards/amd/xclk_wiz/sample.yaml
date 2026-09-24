@@ -6,7 +6,7 @@ sample:
     Exercises clock output enable, clock output rate set, and clock output
     rate get for CLKOUT0 across several target frequencies.
 tests:
-  sample.drivers.xclk_wiz:
+  sample.boards.amd.xclk_wiz:
     build_only: true
     filter: dt_compat_enabled("xlnx,clkx5-wiz-1.0")
     platform_allow:
