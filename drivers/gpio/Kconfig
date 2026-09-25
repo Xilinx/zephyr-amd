@@ -203,6 +203,7 @@ source "drivers/gpio/Kconfig.tle9104"
 source "drivers/gpio/Kconfig.wch_ch32v00x"
 source "drivers/gpio/Kconfig.xec"
 source "drivers/gpio/Kconfig.xlnx"
+source "drivers/gpio/Kconfig.xlnx_iomodule"
 source "drivers/gpio/Kconfig.xlnx_ps"
 source "drivers/gpio/Kconfig.xmc4xxx"
 # zephyr-keep-sorted-stop

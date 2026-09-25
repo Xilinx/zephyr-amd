@@ -1,0 +1,12 @@
+# Copyright 2026 Advanced Micro Devices, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+config GPIO_XLNX_IOMODULE
+	bool "Xilinx IOModule GPIO driver"
+	default y
+	depends on DT_HAS_XLNX_IOMODULE_GPIO_ENABLED
+	depends on MFD_XLNX_IOMODULE
+	depends on GPIO
+	help
+	  Enable GPIO support for Xilinx IOModule GPI/GPO ports.
