@@ -21,3 +21,10 @@ tests:
       - versal2_rpu
     extra_configs:
       - CONFIG_DMA_TEST_SG_MODE=y
+
+  sample.drivers.dma.write_only:
+    integration_platforms:
+      - versalnet_rpu
+      - versal2_rpu
+    extra_configs:
+      - CONFIG_DMA_TEST_WRITE_ONLY_MODE=y
