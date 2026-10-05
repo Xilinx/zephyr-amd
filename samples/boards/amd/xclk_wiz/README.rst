@@ -8,7 +8,7 @@ Overview
 
 This sample demonstrates the three Early-Access (EA) ``clock_control`` APIs
 implemented by the Xilinx AXI Clocking Wizard driver
-(``xlnx,clkx5-wiz-1.0``) on AMD Versal Gen 2 (Telluride / VERSAL_NET):
+(``xlnx,clkx5-wiz-1.0``) on AMD Versal Gen 2:
 
 - **EA1** – ``clock_control_on`` / ``clock_control_off`` (clock output enable)
 - **EA2** – ``clock_control_set_rate`` (dynamic reconfiguration of CLKOUT rate)
