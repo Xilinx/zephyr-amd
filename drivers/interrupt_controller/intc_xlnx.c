@@ -20,10 +20,12 @@
 #include <errno.h>
 #include <zephyr/arch/cpu.h>
 #include <zephyr/devicetree.h>
+#include <zephyr/devicetree/interrupt_controller.h>
 #include <zephyr/drivers/interrupt_controller/intc_xlnx.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sw_isr_table.h>
 #include <zephyr/sys/__assert.h>
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys_clock.h>
@@ -241,7 +243,15 @@ static int xlnx_intc_init(const struct device *dev)
 	return xlnx_intc_irq_start();
 }
 
+#if defined(RISCV_IRQ_MEXT)
+/* Register as aggregator so irq_connect_dynamic() can resolve child IRQs */
+IRQ_PARENT_ENTRY_DEFINE(xlnx_intc, DEVICE_DT_INST_GET(0), DT_INST_IRQN(0),
+			INTC_INST_ISR_TBL_OFFSET(0), DT_INST_INTC_GET_AGGREGATOR_LEVEL(0));
+#endif
+
 #define XILINX_INTC_INIT(inst) \
+	BUILD_ASSERT(DT_INST_INTC_GET_AGGREGATOR_LEVEL(inst) == 2, \
+		     "Only second-level interrupt aggregation is supported"); \
 	DEVICE_DT_INST_DEFINE(inst, &xlnx_intc_init, NULL, NULL, NULL, \
 			      PRE_KERNEL_1, CONFIG_INTC_INIT_PRIORITY, NULL);
 
