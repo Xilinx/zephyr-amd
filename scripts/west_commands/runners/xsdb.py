@@ -179,9 +179,9 @@ class XSDBBinaryRunner(ZephyrBinaryRunner):
 
     def do_flash(self, **kwargs):
         """Flash the target using XSDB."""
-        self._require_xsdb()
+        xsdb = self._require_xsdb()
 
-        cmd = ['xsdb', self.xsdb_cfg_file, *self._boot_args()]
+        cmd = [xsdb, self.xsdb_cfg_file, *self._boot_args()]
         self.check_call(cmd)
 
     def _write_xsdb_debug_params(self) -> str:
@@ -226,7 +226,7 @@ class XSDBBinaryRunner(ZephyrBinaryRunner):
         Uses the board's xsdb.cfg which contains the proper target selection
         and platform initialization specific to each board.
         """
-        self._require_xsdb()
+        xsdb = self._require_xsdb()
 
         if not self.xsdb_cfg_file or not os.path.exists(self.xsdb_cfg_file):
             raise ValueError(
@@ -250,5 +250,5 @@ class XSDBBinaryRunner(ZephyrBinaryRunner):
         self.logger.info(f'hw_server: {hw_server_msg}')
         self.logger.info(_DEBUG_SESSION_HELP.strip())
 
-        cmd = ['xsdb', '-interactive', _XSDB_INTERACTIVE_TCL, params_file]
+        cmd = [xsdb, '-interactive', _XSDB_INTERACTIVE_TCL, params_file]
         self.check_call(cmd)
